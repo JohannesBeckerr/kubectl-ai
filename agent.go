@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/charmbracelet/glamour"
 )
 
@@ -21,7 +22,7 @@ type Agent struct {
 	Query            string
 	Model            string
 	PastQueries      string
-	ContentGenerator LLM
+	ContentGenerator gollm.Client
 	Messages         []Message
 	MaxIterations    int
 	CurrentIteration int
@@ -179,7 +180,18 @@ func (a *Agent) AskLLM(ctx context.Context) (*ReActResponse, error) {
 
 	logger.Info("Thinking...", "prompt", prompt)
 
-	return a.ContentGenerator.GenerateContent(ctx, a.Model, prompt)
+	response, err := a.ContentGenerator.GenerateCompletion(ctx, &gollm.CompletionRequest{
+		Prompt: prompt,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("generating LLM completion: %w", err)
+	}
+
+	reActResp, err := parseReActResponse(response.Response())
+	if err != nil {
+		return nil, fmt.Errorf("parsing ReAct response: %w", err)
+	}
+	return reActResp, nil
 }
 
 func sanitizeToolInput(input string) string {

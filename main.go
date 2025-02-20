@@ -1,3 +1,17 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package main
 
 import (
@@ -11,6 +25,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/charmbracelet/glamour"
 )
 
@@ -20,6 +35,24 @@ var geminiModels = []string{
 }
 
 func main() {
+	ctx := context.Background()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		sig := <-sigCh
+		fmt.Fprintf(os.Stderr, "Received signal, shutting down... %s\n", sig)
+		os.Exit(0)
+	}()
+
+	if err := run(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) error {
 	// non interactive execution when query is specified on the command line.
 	queryFromCmd := flag.String("query", "", "query for the agent")
 	maxIterations := flag.Int("max-iterations", 20, "maximum number of iterations")
@@ -34,8 +67,7 @@ func main() {
 
 	logFile, err := os.OpenFile("app.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
-		slog.Error("Error opening log file", "error", err)
-		return
+		return fmt.Errorf("error opening log file: %w", err)
 	}
 	defer logFile.Close()
 
@@ -48,48 +80,43 @@ func main() {
 		glamour.WithEmoji(),
 	)
 	if err != nil {
-		logger.Error("Error initializing the markdown renderer", "error", err)
-		return
+		return fmt.Errorf("error initializing the markdown renderer: %w", err)
 	}
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	logger.Info("Application started", "pid", os.Getpid())
 
-	go func() {
-		sig := <-sigCh
-		logger.Info("Received signal, shutting down...", "signal", sig)
-		logger.Info("Application exiting")
-		logFile.Close()
-		os.Exit(0)
-	}()
-
-	ctx := context.Background()
 	ctx = withLogger(ctx, logger)
 
-	var contentGenerator LLM
+	var llmClient gollm.Client
 
+	availableModels := []string{"unknown"}
 	switch *llmProvider {
 	case "gemini":
-		apiKey := getAPIKey(logger)
-		if apiKey == "" {
-			fmt.Println("GEMINI_API_KEY environment variable not set")
-			return // Exit if API key is not set
-		}
-		client, err := initGeminiClient(ctx, logger, apiKey)
+		geminiClient, err := gollm.NewGeminiClient(ctx)
 		if err != nil {
-			return // Exit if client initialization fails
+			return fmt.Errorf("creating gemini client: %w", err)
 		}
-		defer client.Close()
+		defer geminiClient.Close()
+		geminiClient.WithModel(*model)
+		llmClient = geminiClient
 
-		contentGenerator = &GeminiLLM{
-			Client: client,
-			Model:  *model,
+		modelNames, err := geminiClient.ListModels(ctx)
+		if err != nil {
+			return fmt.Errorf("listing gemini models: %w", err)
 		}
+		availableModels = modelNames
+
+	case "vertexai":
+		vertexAIClient, err := gollm.NewVertexAIClient(ctx)
+		if err != nil {
+			return fmt.Errorf("creating vertexai client: %w", err)
+		}
+		defer vertexAIClient.Close()
+		vertexAIClient.WithModel(*model)
+		llmClient = vertexAIClient
+
 	default:
-		logger.Error("Invalid language model provider", "provider", *llmProvider)
-		return
+		return fmt.Errorf("invalid language model provider: %s", *llmProvider)
 	}
 
 	if *queryFromCmd != "" {
@@ -97,7 +124,7 @@ func main() {
 		agent := Agent{
 			Model:            *model,
 			Query:            query,
-			ContentGenerator: contentGenerator,
+			ContentGenerator: llmClient,
 			MaxIterations:    *maxIterations,
 			tracePath:        *tracePath,
 			promptFilePath:   *promptFilePath,
@@ -107,7 +134,7 @@ func main() {
 			markdownRenderer: mdRenderer,
 		}
 		agent.Execute(ctx)
-		return
+		return nil
 	}
 
 	chatSession := session{
@@ -121,8 +148,7 @@ func main() {
 		reader := bufio.NewReader(os.Stdin)
 		query, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Println("Error reading input:", err)
-			return
+			return fmt.Errorf("reading input: %w", err)
 		}
 		query = strings.TrimSpace(query)
 
@@ -137,15 +163,11 @@ func main() {
 			clearScreen()
 		case "exit", "quit":
 			fmt.Println("Allright...bye.")
-			return
+			return nil
 		case "models":
-			modelNames, err := contentGenerator.ListModels(ctx)
-			if err != nil {
-				fmt.Println("Error listing models:", err)
-				continue
-			}
+
 			fmt.Println("Available models:")
-			for _, modelName := range modelNames {
+			for _, modelName := range availableModels {
 				fmt.Println(modelName)
 			}
 		default:
@@ -169,7 +191,7 @@ func main() {
 				Model:            chatSession.Model,
 				Query:            query,
 				PastQueries:      chatSession.PreviousQueries(),
-				ContentGenerator: contentGenerator,
+				ContentGenerator: llmClient,
 				MaxIterations:    *maxIterations,
 				tracePath:        *tracePath,
 				promptFilePath:   *promptFilePath,
@@ -209,16 +231,6 @@ func loggerFromContext(ctx context.Context) *slog.Logger {
 		return slog.Default()
 	}
 	return logger
-}
-
-// Function to get the Gemini API key from environment variable.
-func getAPIKey(logger *slog.Logger) string {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		logger.Error("GEMINI_API_KEY environment variable not set")
-		return ""
-	}
-	return apiKey
 }
 
 func clearScreen() {
