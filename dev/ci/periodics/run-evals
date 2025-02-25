@@ -1,0 +1,24 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+set -x
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd ${REPO_ROOT}
+
+
+BINDIR="${REPO_ROOT}/.build/bin"
+mkdir -p "${BINDIR}"
+
+cd "${REPO_ROOT}"
+go build -o "${BINDIR}/kubectl-ai" .
+
+cd "${REPO_ROOT}/k8s-bench"
+go build -o "${BINDIR}/k8s-bench" .
+
+# evaluate model performance for scale related tasks
+
+"${BINDIR}/k8s-bench" --agent-bin "${BINDIR}/kubectl-ai" --kubeconfig ~/.kube/config ${TEST_ARGS:-}
