@@ -1,0 +1,6 @@
+goal: "Please create route for routing traffic from path '/app' to service 'web-service' in namespace 'ingress-test'."
+setup: "setup.sh"
+verifier: "verify.sh"
+cleanup: "cleanup.sh"
+# disabled: true
+difficulty: "medium" 
