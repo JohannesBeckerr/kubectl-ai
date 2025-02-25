@@ -9,12 +9,12 @@ import (
 )
 
 type Task struct {
-	Goal       string `yaml:"goal"`
-	Setup      string `yaml:"setup,omitempty"`
-	Verifier   string `yaml:"verifier,omitempty"`
-	Cleanup    string `yaml:"cleanup,omitempty"`
-	Difficulty string `yaml:"difficulty"`
-	Disabled   bool   `yaml:"disabled,omitempty"`
+	Goal       string `json:"goal"`
+	Setup      string `json:"setup,omitempty"`
+	Verifier   string `json:"verifier,omitempty"`
+	Cleanup    string `json:"cleanup,omitempty"`
+	Difficulty string `json:"difficulty"`
+	Disabled   bool   `json:"disabled,omitempty"`
 }
 
 type EvalConfig struct {
