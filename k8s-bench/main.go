@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"flag"
-	"log"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/GoogleCloudPlatform/kubectl-ai/k8s-bench/pkg/model"
 )
 
 type Task struct {
@@ -18,12 +21,13 @@ type Task struct {
 }
 
 type EvalConfig struct {
-	LLMProviders []string
-	Models       map[string][]string // provider -> list of models
-	KubeConfig   string
-	TasksDir     string
-	TaskPattern  string
-	AgentBin     string
+	LLMConfigs  []model.LLMConfig
+	KubeConfig  string
+	TasksDir    string
+	TaskPattern string
+	AgentBin    string
+
+	OutputDir string
 }
 
 func expandPath(path string) (string, error) {
@@ -38,53 +42,79 @@ func expandPath(path string) (string, error) {
 }
 
 func main() {
-	tasksDir := flag.String("tasks-dir", "./tasks", "Directory containing evaluation tasks")
-	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig file")
-	taskPattern := flag.String("task-pattern", "", "Pattern to filter tasks (e.g. 'pod' or 'redis')")
-	agentBin := flag.String("agent-bin", "", "Path to kubernetes agent binary")
-	llmProvider := flag.String("llm-provider", "gemini", "Specific LLM provider to evaluate (e.g. 'gemini' or 'ollama')")
-	modelList := flag.String("models", "", "Comma-separated list of models to evaluate (e.g. 'gemini-1.0,gemini-2.0')")
+	ctx := context.Background()
+	if err := run(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+}
+
+type Strings []string
+
+func (f *Strings) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *Strings) Set(s string) error {
+	*f = append(*f, s)
+	return nil
+}
+
+func run(ctx context.Context) error {
+	config := EvalConfig{
+		TasksDir: "./tasks",
+	}
+
+	llmProvider := "gemini"
+	modelList := ""
+
+	flag.StringVar(&config.TasksDir, "tasks-dir", config.TasksDir, "Directory containing evaluation tasks")
+	flag.StringVar(&config.KubeConfig, "kubeconfig", config.KubeConfig, "Path to kubeconfig file")
+	flag.StringVar(&config.TaskPattern, "task-pattern", config.TaskPattern, "Pattern to filter tasks (e.g. 'pod' or 'redis')")
+	flag.StringVar(&config.AgentBin, "agent-bin", config.AgentBin, "Path to kubernetes agent binary")
+	flag.StringVar(&llmProvider, "llm-provider", llmProvider, "Specific LLM provider to evaluate (e.g. 'gemini' or 'ollama')")
+	flag.StringVar(&modelList, "models", modelList, "Comma-separated list of models to evaluate (e.g. 'gemini-1.0,gemini-2.0')")
+	flag.StringVar(&config.OutputDir, "output-dir", config.OutputDir, "Directory to write results to")
 	flag.Parse()
 
-	if *kubeconfig == "" {
-		log.Fatal("--kubeconfig is required")
+	if config.KubeConfig == "" {
+		return fmt.Errorf("-- kubeconfig is required")
 	}
-
-	expandedKubeconfig, err := expandPath(*kubeconfig)
+	expandedKubeconfig, err := expandPath(config.KubeConfig)
 	if err != nil {
-		log.Fatalf("Failed to expand kubeconfig path: %v", err)
+		return fmt.Errorf("Failed to expand kubeconfig path %q: %w", config.KubeConfig, err)
 	}
-
-	providers := []string{"gemini", "ollama"}
-	if *llmProvider != "" {
-		providers = []string{*llmProvider}
-	}
+	config.KubeConfig = expandedKubeconfig
 
 	defaultModels := map[string][]string{
 		"gemini": {"gemini-2.0-flash-thinking-exp-01-21"},
 	}
 
 	models := defaultModels
-	if *modelList != "" {
-		if *llmProvider == "" {
-			log.Fatal("--llm-provider is required when --models is specified")
+	if modelList != "" {
+		if llmProvider == "" {
+			return fmt.Errorf("--llm-provider is required when --models is specified")
 		}
-		modelSlice := strings.Split(*modelList, ",")
+		modelSlice := strings.Split(modelList, ",")
 		models = map[string][]string{
-			*llmProvider: modelSlice,
+			llmProvider: modelSlice,
 		}
 	}
 
-	config := EvalConfig{
-		LLMProviders: providers,
-		Models:       models,
-		KubeConfig:   expandedKubeconfig,
-		TasksDir:     *tasksDir,
-		TaskPattern:  *taskPattern,
-		AgentBin:     *agentBin,
+	for llmProviderID, models := range models {
+		for _, modelID := range models {
+			id := fmt.Sprintf("%s-%s", llmProviderID, modelID)
+			config.LLMConfigs = append(config.LLMConfigs, model.LLMConfig{
+				ID:         id,
+				ProviderID: llmProviderID,
+				ModelID:    modelID,
+			})
+		}
 	}
 
 	if err := runEvaluation(config); err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("running evaluation: %w", err)
 	}
+
+	return nil
 }

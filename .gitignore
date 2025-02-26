@@ -1,6 +1,7 @@
 # Binary
 kubectl-ai
 bin/
+.build/
 
 # Log files
 *.log
