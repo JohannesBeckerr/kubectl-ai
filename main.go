@@ -26,6 +26,7 @@ import (
 	"syscall"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
@@ -61,7 +62,6 @@ func run(ctx context.Context) error {
 	model := flag.String("model", geminiModels[0], "language model")
 	templateFile := flag.String("prompt-template-path", "", "path to custom prompt template file")
 	tracePath := flag.String("trace-path", "trace.log", "path to the trace file")
-	promptFilePath := flag.String("prompt-log-path", "prompt.log", "path to the prompt file")
 	removeWorkDir := flag.Bool("remove-workdir", false, "remove the temporary working directory after execution")
 
 	// add commandline flags for logging
@@ -166,18 +166,28 @@ func run(ctx context.Context) error {
 		return err
 	}
 
+	var recorder journal.Recorder
+	if *tracePath != "" {
+		fileRecorder, err := journal.NewFileRecorder(*tracePath)
+		if err != nil {
+			return fmt.Errorf("creating trace recorder: %w", err)
+		}
+		defer fileRecorder.Close()
+		recorder = fileRecorder
+	}
+
 	if queryFromCmd != "" {
 		query := queryFromCmd
+
 		agent := Agent{
 			Model:            *model,
 			Query:            query,
 			ContentGenerator: llmClient,
 			MaxIterations:    *maxIterations,
-			tracePath:        *tracePath,
-			promptFilePath:   *promptFilePath,
 			Kubeconfig:       kubeconfigPath,
 			RemoveWorkDir:    *removeWorkDir,
 			templateFile:     *templateFile,
+			Recorder:         recorder,
 		}
 		agent.Execute(ctx, u)
 		return nil
@@ -238,11 +248,10 @@ func run(ctx context.Context) error {
 				PastQueries:      chatSession.PreviousQueries(),
 				ContentGenerator: llmClient,
 				MaxIterations:    *maxIterations,
-				tracePath:        *tracePath,
-				promptFilePath:   *promptFilePath,
 				Kubeconfig:       kubeconfigPath,
 				RemoveWorkDir:    *removeWorkDir,
 				templateFile:     *templateFile,
+				Recorder:         recorder,
 			}
 			agent.Execute(ctx, u)
 			chatSession.Queries = append(chatSession.Queries, query)
