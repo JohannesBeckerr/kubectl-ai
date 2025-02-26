@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gopkg.in/yaml.v2"
+	"github.com/GoogleCloudPlatform/kubectl-ai/k8s-bench/pkg/model"
+	"sigs.k8s.io/yaml"
 )
 
 func runEvaluation(config EvalConfig) error {
@@ -16,7 +17,7 @@ func runEvaluation(config EvalConfig) error {
 		return fmt.Errorf("failed to load tasks: %w", err)
 	}
 
-	results := make(map[string]map[string]map[string]bool) // task -> provider -> model -> success
+	var allResults []model.TaskResult
 
 	for taskID, task := range tasks {
 		fmt.Printf("Evaluating task: %s\n", taskID)
@@ -29,23 +30,35 @@ func runEvaluation(config EvalConfig) error {
 			}
 		}
 
-		for _, provider := range config.LLMProviders {
-			results[taskID] = make(map[string]map[string]bool)
-			results[taskID][provider] = make(map[string]bool)
+		for _, llmConfig := range config.LLMConfigs {
+			result := evaluateTask(config, taskID, task, llmConfig)
 
-			for _, model := range config.Models[provider] {
-				success, err := evaluateTask(config, taskID, task, provider, model)
-				if err != nil {
-					fmt.Printf("Error evaluating task %s with %s/%s: %v\n", taskID, provider, model, err)
-					results[taskID][provider][model] = false
-					continue
+			if config.OutputDir != "" {
+				dir := filepath.Join(config.OutputDir, taskID, llmConfig.ID)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					return fmt.Errorf("creating directory %q: %w", dir, err)
 				}
-				results[taskID][provider][model] = success
+				if err := writeToYAMLFile(filepath.Join(dir, "results.yaml"), result); err != nil {
+					return fmt.Errorf("writing results to file: %w", err)
+				}
 			}
+			allResults = append(allResults, result)
 		}
 	}
 
-	printResults(results)
+	printResults(allResults)
+	return nil
+}
+
+// writeToYAMLFile will encode the specified object as yaml, and write it to the file.
+func writeToYAMLFile(p string, obj any) error {
+	data, err := yaml.Marshal(obj)
+	if err != nil {
+		return fmt.Errorf("marshaling to yaml: %w", err)
+	}
+	if err := os.WriteFile(p, data, 0644); err != nil {
+		return fmt.Errorf("writing to file %q: %w", p, err)
+	}
 	return nil
 }
 
@@ -91,25 +104,30 @@ func loadTasks(config EvalConfig) (map[string]Task, error) {
 	return tasks, nil
 }
 
-func evaluateTask(config EvalConfig, taskID string, task Task, provider, model string) (bool, error) {
-	// Run kuba
+func evaluateTask(config EvalConfig, taskID string, task Task, llmConfig model.LLMConfig) model.TaskResult {
+	result := model.TaskResult{
+		Task:      taskID,
+		LLMConfig: llmConfig,
+	}
+
+	// Run the agent
 	cmd := exec.Command(config.AgentBin,
 		"--kubeconfig", config.KubeConfig,
 		"--query", task.Goal,
-		"--llm-provider", provider,
-		"--model", model,
+		"--llm-provider", llmConfig.ProviderID,
+		"--model", llmConfig.ModelID,
 	)
 
 	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", config.KubeConfig))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	fmt.Printf("\nRunning kuba for task %s with %s/%s\n", taskID, provider, model)
+	fmt.Printf("\nRunning %s for task %s with %+v\n", config.AgentBin, taskID, llmConfig)
 
 	if err := cmd.Run(); err != nil {
-		return false, fmt.Errorf("kuba failed: %w", err)
+		result.Error = err.Error()
+		return result
 	}
 
-	success := true
 	// Run verifier if specified
 	if task.Verifier != "" {
 		verifierPath := filepath.Join(config.TasksDir, taskID, task.Verifier)
@@ -120,9 +138,14 @@ func evaluateTask(config EvalConfig, taskID string, task Task, provider, model s
 		fmt.Printf("\nRunning verifier for task %s\n", taskID)
 
 		err := cmd.Run()
-		success = err == nil
-		if !success {
-			fmt.Printf("Verifier failed with error: %v\n", err)
+		if err == nil {
+			result.Result = "success"
+		} else if _, ok := err.(*exec.ExitError); ok {
+			// "Normal" script failure
+			result.Result = "fail"
+		} else {
+			// Unexpected error
+			result.Error = err.Error()
 		}
 	}
 
@@ -134,7 +157,7 @@ func evaluateTask(config EvalConfig, taskID string, task Task, provider, model s
 		}
 	}
 
-	return success, nil
+	return result
 }
 
 func runScript(path string, kubeconfig string) error {
@@ -146,17 +169,16 @@ func runScript(path string, kubeconfig string) error {
 	return cmd.Run()
 }
 
-func printResults(results map[string]map[string]map[string]bool) {
+func printResults(allResults []model.TaskResult) {
 	fmt.Println("\nEvaluation Results:")
 	fmt.Println("==================")
 
-	for taskID, providerResults := range results {
-		fmt.Printf("\nTask: %s\n", taskID)
-		for provider, modelResults := range providerResults {
-			fmt.Printf("  Provider: %s\n", provider)
-			for model, success := range modelResults {
-				fmt.Printf("    %s: %v\n", model, success)
-			}
+	for _, result := range allResults {
+		fmt.Printf("\nTask: %s\n", result.Task)
+		fmt.Printf("  LLM Config: %+vv\n", result.LLMConfig)
+		fmt.Printf("    %v\n", result.Result)
+		if result.Error != "" {
+			fmt.Printf("    Error: %s\n", result.Error)
 		}
 	}
 }
