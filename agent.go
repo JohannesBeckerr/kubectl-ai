@@ -10,7 +10,6 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/charmbracelet/glamour"
-	"github.com/google/generative-ai-go/genai"
 	"k8s.io/klog/v2"
 )
 
@@ -329,19 +328,6 @@ func parseReActResponse(input string) (*ReActResponse, error) {
 		return nil, err
 	}
 	return &reActResp, nil
-}
-
-func respToStr(resp *genai.GenerateContentResponse) string {
-	for _, cand := range resp.Candidates {
-		if cand.Content != nil {
-			for _, part := range cand.Content.Parts {
-				if _, ok := part.(genai.Text); ok {
-					return fmt.Sprint(part)
-				}
-			}
-		}
-	}
-	return ""
 }
 
 // Move the default template to a constant

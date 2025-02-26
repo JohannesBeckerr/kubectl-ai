@@ -8,7 +8,6 @@ replace github.com/GoogleCloudPlatform/kubectl-ai/gollm => ./gollm
 require (
 	github.com/GoogleCloudPlatform/kubectl-ai/gollm v0.0.0-00010101000000-000000000000
 	github.com/charmbracelet/glamour v0.8.0
-	github.com/google/generative-ai-go v0.19.0
 	k8s.io/klog/v2 v2.130.1
 )
 
@@ -31,6 +30,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/google/generative-ai-go v0.19.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
