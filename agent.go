@@ -308,16 +308,20 @@ func (a *Agent) generateFromTemplate(data Data) (string, error) {
 }
 
 // parseReActResponse parses the LLM response into a ReActResponse struct
+// This function assumes the input contains exactly one JSON code block
+// formatted with ```json and ``` markers. The JSON block is expected to
+// contain a valid ReActResponse object.
 func parseReActResponse(input string) (*ReActResponse, error) {
 	cleaned := strings.TrimSpace(input)
 
-	first := strings.Index(cleaned, "```json")
+	const jsonBlockMarker = "```json"
+	first := strings.Index(cleaned, jsonBlockMarker)
 	last := strings.LastIndex(cleaned, "```")
 	if first == -1 || last == -1 {
 		fmt.Printf("\n%s\n", cleaned)
 		return nil, fmt.Errorf("no JSON code block found")
 	}
-	cleaned = cleaned[first+7 : last]
+	cleaned = cleaned[first+len(jsonBlockMarker) : last]
 
 	cleaned = strings.ReplaceAll(cleaned, "\n", "")
 	cleaned = strings.TrimSpace(cleaned)
