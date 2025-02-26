@@ -67,6 +67,7 @@ func run(ctx context.Context) error {
 
 	llmProvider := "gemini"
 	modelList := ""
+	defaultKubeConfig := "~/.kube/config"
 
 	flag.StringVar(&config.TasksDir, "tasks-dir", config.TasksDir, "Directory containing evaluation tasks")
 	flag.StringVar(&config.KubeConfig, "kubeconfig", config.KubeConfig, "Path to kubeconfig file")
@@ -78,7 +79,7 @@ func run(ctx context.Context) error {
 	flag.Parse()
 
 	if config.KubeConfig == "" {
-		return fmt.Errorf("-- kubeconfig is required")
+		config.KubeConfig = defaultKubeConfig
 	}
 	expandedKubeconfig, err := expandPath(config.KubeConfig)
 	if err != nil {
