@@ -9,6 +9,8 @@ require (
 	github.com/GoogleCloudPlatform/kubectl-ai/gollm v0.0.0-00010101000000-000000000000
 	github.com/charmbracelet/glamour v0.8.0
 	k8s.io/klog/v2 v2.130.1
+	github.com/google/generative-ai-go v0.19.0
+	sigs.k8s.io/yaml v1.4.0
 )
 
 require (
