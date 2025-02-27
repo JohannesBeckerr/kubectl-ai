@@ -110,12 +110,11 @@ func evaluateTask(config EvalConfig, taskID string, task Task, llmConfig model.L
 		LLMConfig: llmConfig,
 	}
 
-	// Run the agent
 	cmd := exec.Command(config.AgentBin,
 		"--kubeconfig", config.KubeConfig,
-		"--query", task.Goal,
 		"--llm-provider", llmConfig.ProviderID,
 		"--model", llmConfig.ModelID,
+		task.Goal,
 	)
 
 	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", config.KubeConfig))

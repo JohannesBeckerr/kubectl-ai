@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -53,8 +54,7 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	// non interactive execution when query is specified on the command line.
-	queryFromCmd := flag.String("query", "", "query for the agent")
+	// Command line flags
 	maxIterations := flag.Int("max-iterations", 20, "maximum number of iterations")
 	kubeconfig := flag.String("kubeconfig", "", "path to the kubeconfig file")
 	llmProvider := flag.String("llm-provider", "gemini", "language model provider")
@@ -71,6 +71,50 @@ func run(ctx context.Context) error {
 	flag.Set("log_file", "/tmp/kubectl-ai.log")
 
 	flag.Parse()
+
+	// Handle kubeconfig with priority: command-line arg > env var > default path
+	kubeconfigPath := *kubeconfig
+	if kubeconfigPath == "" {
+		// Check environment variable
+		kubeconfigPath = os.Getenv("KUBECONFIG")
+		if kubeconfigPath == "" {
+			// Use default path
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("error getting user home directory: %w", err)
+			}
+			kubeconfigPath = filepath.Join(homeDir, ".kube", "config")
+		}
+	}
+
+	// Check for positional arguments (after all flags are parsed)
+	args := flag.Args()
+	var queryFromCmd string
+
+	// Handle positional arguments
+	if len(args) > 1 {
+		return fmt.Errorf("only one positional argument (query) is allowed")
+	} else if len(args) == 1 {
+		if args[0] == "-" {
+			// Read query from stdin
+			scanner := bufio.NewScanner(os.Stdin)
+			var queryBuilder strings.Builder
+			for scanner.Scan() {
+				queryBuilder.WriteString(scanner.Text())
+				queryBuilder.WriteString("\n")
+			}
+			if err := scanner.Err(); err != nil {
+				return fmt.Errorf("error reading from stdin: %w", err)
+			}
+			queryFromCmd = strings.TrimSpace(queryBuilder.String())
+			if queryFromCmd == "" {
+				return fmt.Errorf("no query provided from stdin")
+			}
+		} else {
+			// Use the positional argument as the query
+			queryFromCmd = args[0]
+		}
+	}
 
 	mdRenderer, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
@@ -115,8 +159,8 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("invalid language model provider: %s", *llmProvider)
 	}
 
-	if *queryFromCmd != "" {
-		query := *queryFromCmd
+	if queryFromCmd != "" {
+		query := queryFromCmd
 		agent := Agent{
 			Model:            *model,
 			Query:            query,
@@ -124,7 +168,7 @@ func run(ctx context.Context) error {
 			MaxIterations:    *maxIterations,
 			tracePath:        *tracePath,
 			promptFilePath:   *promptFilePath,
-			Kubeconfig:       *kubeconfig,
+			Kubeconfig:       kubeconfigPath,
 			RemoveWorkDir:    *removeWorkDir,
 			templateFile:     *templateFile,
 			markdownRenderer: mdRenderer,
@@ -191,7 +235,7 @@ func run(ctx context.Context) error {
 				MaxIterations:    *maxIterations,
 				tracePath:        *tracePath,
 				promptFilePath:   *promptFilePath,
-				Kubeconfig:       *kubeconfig,
+				Kubeconfig:       kubeconfigPath,
 				RemoveWorkDir:    *removeWorkDir,
 				templateFile:     *templateFile,
 				markdownRenderer: mdRenderer,

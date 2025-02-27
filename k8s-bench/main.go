@@ -81,6 +81,7 @@ func run(ctx context.Context) error {
 	if config.KubeConfig == "" {
 		config.KubeConfig = defaultKubeConfig
 	}
+
 	expandedKubeconfig, err := expandPath(config.KubeConfig)
 	if err != nil {
 		return fmt.Errorf("Failed to expand kubeconfig path %q: %w", config.KubeConfig, err)
