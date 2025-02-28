@@ -47,12 +47,18 @@ Simply provide your query as a positional argument:
 kubectl-ai "your natural language query"
 ```
 
-You can also pipe content to kubectl-ai using the special "-" argument:
+You can also pipe content to kubectl-ai, and use it with other unix commands:
 
 ```bash
-echo "list all pods in the default namespace" | kubectl-ai -
+kubectl-ai < query.txt
 # OR
-cat query.txt | kubectl-ai -
+echo "list all pods in the default namespace" | kubectl-ai
+```
+
+You can even combine a positional argument with stdin input. The positional argument will be used as a prefix to the stdin content:
+
+```bash
+cat error.log | kubectl-ai "explain the error"
 ```
 
 ### Interactive Shell

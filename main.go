@@ -91,29 +91,40 @@ func run(ctx context.Context) error {
 	args := flag.Args()
 	var queryFromCmd string
 
-	// Handle positional arguments
+	// Check if stdin has data (is not a terminal)
+	stdinInfo, _ := os.Stdin.Stat()
+	stdinHasData := (stdinInfo.Mode() & os.ModeCharDevice) == 0
+
+	// Handle positional arguments and stdin
 	if len(args) > 1 {
 		return fmt.Errorf("only one positional argument (query) is allowed")
-	} else if len(args) == 1 {
-		if args[0] == "-" {
-			// Read query from stdin
-			scanner := bufio.NewScanner(os.Stdin)
-			var queryBuilder strings.Builder
-			for scanner.Scan() {
-				queryBuilder.WriteString(scanner.Text())
-				queryBuilder.WriteString("\n")
-			}
-			if err := scanner.Err(); err != nil {
-				return fmt.Errorf("error reading from stdin: %w", err)
-			}
-			queryFromCmd = strings.TrimSpace(queryBuilder.String())
-			if queryFromCmd == "" {
-				return fmt.Errorf("no query provided from stdin")
-			}
-		} else {
-			// Use the positional argument as the query
-			queryFromCmd = args[0]
+	} else if stdinHasData {
+		// Read from stdin
+		scanner := bufio.NewScanner(os.Stdin)
+		var queryBuilder strings.Builder
+
+		// If we have a positional argument, use it as a prefix
+		if len(args) == 1 {
+			queryBuilder.WriteString(args[0])
+			queryBuilder.WriteString("\n")
 		}
+
+		// Read the rest from stdin
+		for scanner.Scan() {
+			queryBuilder.WriteString(scanner.Text())
+			queryBuilder.WriteString("\n")
+		}
+		if err := scanner.Err(); err != nil {
+			return fmt.Errorf("error reading from stdin: %w", err)
+		}
+
+		queryFromCmd = strings.TrimSpace(queryBuilder.String())
+		if queryFromCmd == "" {
+			return fmt.Errorf("no query provided from stdin")
+		}
+	} else if len(args) == 1 {
+		// Just use the positional argument as the query
+		queryFromCmd = args[0]
 	}
 
 	mdRenderer, err := glamour.NewTermRenderer(
