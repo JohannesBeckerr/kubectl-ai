@@ -27,7 +27,9 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy/agentic"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy/react"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
@@ -192,14 +194,13 @@ func run(ctx context.Context) error {
 			Tools:            buildTools(),
 			Recorder:         recorder,
 			RemoveWorkDir:    *removeWorkDir,
-			Query:            query,
 		}
 		agent := Agent{
 			Model:    *model,
 			Recorder: recorder,
 			Strategy: strategy,
 		}
-		return agent.RunOnce(ctx, u)
+		return agent.RunOnce(ctx, query, u)
 	}
 
 	chatSession := session{
@@ -207,9 +208,19 @@ func run(ctx context.Context) error {
 		Model:   *model,
 	}
 
-	u.RenderOutput(ctx, "Hey there, what can I help you with today?\n", ui.Foreground(ui.ColorRed))
+	strategy := &agentic.Strategy{
+		Recorder:  recorder,
+		LLMClient: llmClient,
+		Tools:     make(map[string]tools.Tool),
+	}
+	strategy.Tools["kubectl_get"] = &tools.KubectlGet{}
+	if err := strategy.Init(ctx); err != nil {
+		return err
+	}
+
+	u.RenderOutput(ctx, "Hey there, what can I help you with today?", ui.Foreground(ui.ColorRed))
 	for {
-		userInterface.RenderOutput(ctx, "\n>> ")
+		u.RenderOutput(ctx, "\n>> ")
 		reader := bufio.NewReader(os.Stdin)
 		query, err := reader.ReadString('\n')
 		if err != nil {
@@ -223,11 +234,11 @@ func run(ctx context.Context) error {
 		switch query {
 		case "reset":
 			chatSession.Queries = []string{}
-			userInterface.ClearScreen()
+			u.ClearScreen()
 		case "clear":
-			userInterface.ClearScreen()
+			u.ClearScreen()
 		case "exit", "quit":
-			userInterface.RenderOutput(ctx, "Allright...bye.")
+			u.RenderOutput(ctx, "Allright...bye.")
 			return nil
 		case "models":
 			u.RenderOutput(ctx, "Available models:")
@@ -242,31 +253,31 @@ func run(ctx context.Context) error {
 					continue
 				}
 				if len(parts) == 1 {
-					userInterface.RenderOutput(ctx, fmt.Sprintf("Current model is `%s`\n", chatSession.Model), ui.RenderMarkdown())
+					u.RenderOutput(ctx, fmt.Sprintf("Current model is `%s`\n", chatSession.Model), ui.RenderMarkdown())
 					continue
 				}
 				chatSession.Model = parts[1]
-				userInterface.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
+				u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
 				continue
 			}
-			strategy := &react.Strategy{
-				ContentGenerator: llmClient,
-				MaxIterations:    *maxIterations,
-				TemplateFile:     *templateFile,
-				Tools:            buildTools(),
-				Recorder:         recorder,
-				RemoveWorkDir:    *removeWorkDir,
-				Query:            query,
-				PastQueries:      chatSession.PreviousQueries(),
-				Kubeconfig:       kubeconfigPath,
-			}
+
+			// strategy := &react.Strategy{
+			// 	ContentGenerator: llmClient,
+			// 	MaxIterations:    *maxIterations,
+			// 	TemplateFile:     *templateFile,
+			// 	Tools:            buildTools(),
+			// 	Recorder:         recorder,
+			// 	RemoveWorkDir:    *removeWorkDir,
+			// 	PastQueries:      chatSession.PreviousQueries(),
+			// 	Kubeconfig:       kubeconfigPath,
+			// }
 
 			agent := Agent{
 				Model:    chatSession.Model,
 				Recorder: recorder,
 				Strategy: strategy,
 			}
-			if err := agent.RunOnce(ctx, u); err != nil {
+			if err := agent.RunOnce(ctx, query, u); err != nil {
 				return err
 			}
 			chatSession.Queries = append(chatSession.Queries, query)
@@ -284,6 +295,6 @@ func (s *session) PreviousQueries() string {
 	return strings.Join(s.Queries, "\n")
 }
 
-func (a *Agent) RunOnce(ctx context.Context, u ui.UI) error {
-	return a.Strategy.RunOnce(ctx, u)
+func (a *Agent) RunOnce(ctx context.Context, query string, userInterface ui.UI) error {
+	return a.Strategy.RunOnce(ctx, query, userInterface)
 }

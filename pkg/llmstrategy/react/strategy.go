@@ -30,7 +30,6 @@ type Strategy struct {
 	MaxIterations    int
 	CurrentIteration int
 
-	Query       string
 	PastQueries string
 
 	Kubeconfig string
@@ -38,9 +37,9 @@ type Strategy struct {
 	Tools map[string]func(input string, kubeconfig string, workDir string) (string, error)
 }
 
-func (a *Strategy) RunOnce(ctx context.Context, u ui.UI) error {
+func (a *Strategy) RunOnce(ctx context.Context, query string, u ui.UI) error {
 	log := klog.FromContext(ctx)
-	log.Info("Executing query:", "query", a.Query)
+	log.Info("Executing query:", "query", query)
 
 	// Create a temporary working directory
 	workDir, err := os.MkdirTemp("", "agent-workdir-*")
@@ -58,7 +57,7 @@ func (a *Strategy) RunOnce(ctx context.Context, u ui.UI) error {
 		log.Info("Starting iteration", "iteration", a.CurrentIteration)
 
 		// Get next action from LLM
-		reActResp, err := a.AskLLM(ctx)
+		reActResp, err := a.AskLLM(ctx, query)
 		if err != nil {
 			log.Error(err, "Error asking LLM")
 			u.RenderOutput(ctx, fmt.Sprintf("\nSorry, Couldn't complete the task. LLM error %v\n", err), ui.Foreground(ui.ColorRed))
@@ -133,12 +132,12 @@ func (a *Strategy) executeAction(ctx context.Context, action *Action, workDir st
 }
 
 // AskLLM asks the LLM for the next action, sending a prompt including the .History
-func (a *Strategy) AskLLM(ctx context.Context) (*ReActResponse, error) {
+func (a *Strategy) AskLLM(ctx context.Context, query string) (*ReActResponse, error) {
 	log := klog.FromContext(ctx)
 	log.Info("Asking LLM...")
 
 	data := Data{
-		Query:       a.Query,
+		Query:       query,
 		PastQueries: a.PastQueries,
 		History:     a.History(),
 		Tools:       "kubectl, gcrane, bash",
