@@ -27,6 +27,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy/react"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
@@ -183,7 +184,7 @@ func run(ctx context.Context) error {
 	if queryFromCmd != "" {
 		query := queryFromCmd
 
-		strategy := &Strategy{
+		strategy := &react.Strategy{
 			Kubeconfig:       kubeconfigPath,
 			ContentGenerator: llmClient,
 			MaxIterations:    *maxIterations,
@@ -248,7 +249,7 @@ func run(ctx context.Context) error {
 				u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
 				continue
 			}
-			strategy := &Strategy{
+			strategy := &react.Strategy{
 				ContentGenerator: llmClient,
 				MaxIterations:    *maxIterations,
 				TemplateFile:     *templateFile,
