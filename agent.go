@@ -9,7 +9,7 @@ import (
 	"text/template"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
-	"github.com/charmbracelet/glamour"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
 
@@ -32,11 +32,10 @@ type Agent struct {
 	promptFilePath   string
 	Kubeconfig       string
 	RemoveWorkDir    bool
-	markdownRenderer *glamour.TermRenderer
 	templateFile     string
 }
 
-func (a *Agent) Execute(ctx context.Context) error {
+func (a *Agent) Execute(ctx context.Context, u ui.UI) error {
 	log := klog.FromContext(ctx)
 	log.Info("Executing query:", "query", a.Query)
 
@@ -62,7 +61,7 @@ func (a *Agent) Execute(ctx context.Context) error {
 		reActResp, err := a.AskLLM(ctx)
 		if err != nil {
 			log.Error(err, "Error asking LLM")
-			fmt.Printf("\nSorry, Couldn't complete the task. LLM error %v\n", err)
+			u.RenderOutput(ctx, fmt.Sprintf("\nSorry, Couldn't complete the task. LLM error %v\n", err), ui.Foreground(ui.ColorRed))
 			return err
 		}
 
@@ -74,13 +73,7 @@ func (a *Agent) Execute(ctx context.Context) error {
 		if reActResp.Answer != "" {
 			log.Info("Final answer received", "answer", reActResp.Answer)
 			a.Trace(ctx, "assistant", fmt.Sprintf("Final Answer: %s", reActResp.Answer))
-			out, err := a.markdownRenderer.Render(reActResp.Answer)
-			if err != nil {
-				log.Error(err, "Error rendering markdown")
-				fmt.Printf("\n%s\n>>", reActResp.Answer)
-			} else {
-				fmt.Println(out)
-			}
+			u.RenderOutput(ctx, reActResp.Answer, ui.RenderMarkdown())
 			return nil
 		}
 
@@ -97,15 +90,8 @@ func (a *Agent) Execute(ctx context.Context) error {
 			a.Trace(ctx, "assistant", fmt.Sprintf("Action: Using %s tool", reActResp.Action.Name))
 
 			// Display action details
-			toolOutRendered := fmt.Sprintf("  Running: %s", reActResp.Action.Input)
-			fmt.Printf("\033[32m%s\033[0m", toolOutRendered)
-			renderedReason, err := a.markdownRenderer.Render(reActResp.Action.Reason)
-			if err != nil {
-				log.Error(err, "Error rendering markdown")
-				fmt.Printf("\033[37m%s\033[0m \n", reActResp.Action.Reason)
-			} else {
-				fmt.Println(renderedReason)
-			}
+			u.RenderOutput(ctx, fmt.Sprintf("  Running: %s", reActResp.Action.Input), ui.Foreground(ui.ColorGreen))
+			u.RenderOutput(ctx, reActResp.Action.Reason, ui.RenderMarkdown())
 
 			// Execute action
 			output, err := a.executeAction(ctx, reActResp.Action, workDir)
@@ -125,7 +111,7 @@ func (a *Agent) Execute(ctx context.Context) error {
 
 	// Handle max iterations reached
 	log.Info("Max iterations reached", "iterations", a.CurrentIteration)
-	fmt.Printf("\nSorry, Couldn't complete the task after %d attempts.\n", a.MaxIterations)
+	u.RenderOutput(ctx, fmt.Sprintf("\nSorry, Couldn't complete the task after %d attempts.\n", a.MaxIterations), ui.Foreground(ui.ColorRed))
 	return fmt.Errorf("max iterations reached")
 }
 
@@ -318,8 +304,7 @@ func parseReActResponse(input string) (*ReActResponse, error) {
 	first := strings.Index(cleaned, jsonBlockMarker)
 	last := strings.LastIndex(cleaned, "```")
 	if first == -1 || last == -1 {
-		fmt.Printf("\n%s\n", cleaned)
-		return nil, fmt.Errorf("no JSON code block found")
+		return nil, fmt.Errorf("no JSON code block found in %q", cleaned)
 	}
 	cleaned = cleaned[first+len(jsonBlockMarker) : last]
 
@@ -328,8 +313,7 @@ func parseReActResponse(input string) (*ReActResponse, error) {
 
 	var reActResp ReActResponse
 	if err := json.Unmarshal([]byte(cleaned), &reActResp); err != nil {
-		fmt.Printf("\n%s\n", cleaned)
-		return nil, err
+		return nil, fmt.Errorf("parsing json %q: %w", cleaned, err)
 	}
 	return &reActResp, nil
 }
