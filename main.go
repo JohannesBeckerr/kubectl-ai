@@ -209,7 +209,7 @@ func run(ctx context.Context) error {
 
 	u.RenderOutput(ctx, "Hey there, what can I help you with today?\n", ui.Foreground(ui.ColorRed))
 	for {
-		u.RenderOutput(ctx, "\n>> ")
+		userInterface.RenderOutput(ctx, "\n>> ")
 		reader := bufio.NewReader(os.Stdin)
 		query, err := reader.ReadString('\n')
 		if err != nil {
@@ -223,11 +223,11 @@ func run(ctx context.Context) error {
 		switch query {
 		case "reset":
 			chatSession.Queries = []string{}
-			u.ClearScreen()
+			userInterface.ClearScreen()
 		case "clear":
-			u.ClearScreen()
+			userInterface.ClearScreen()
 		case "exit", "quit":
-			u.RenderOutput(ctx, "Allright...bye.\n")
+			userInterface.RenderOutput(ctx, "Allright...bye.")
 			return nil
 		case "models":
 			u.RenderOutput(ctx, "Available models:")
@@ -242,11 +242,11 @@ func run(ctx context.Context) error {
 					continue
 				}
 				if len(parts) == 1 {
-					u.RenderOutput(ctx, fmt.Sprintf("Current model is `%s`\n", chatSession.Model), ui.RenderMarkdown())
+					userInterface.RenderOutput(ctx, fmt.Sprintf("Current model is `%s`\n", chatSession.Model), ui.RenderMarkdown())
 					continue
 				}
 				chatSession.Model = parts[1]
-				u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
+				userInterface.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
 				continue
 			}
 			strategy := &react.Strategy{
