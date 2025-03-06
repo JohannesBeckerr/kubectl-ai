@@ -27,7 +27,8 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
-	"github.com/charmbracelet/glamour"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy/react"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
 
@@ -127,15 +128,6 @@ func run(ctx context.Context) error {
 		queryFromCmd = args[0]
 	}
 
-	mdRenderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithPreservedNewLines(),
-		glamour.WithEmoji(),
-	)
-	if err != nil {
-		return fmt.Errorf("error initializing the markdown renderer: %w", err)
-	}
-
 	klog.Info("Application started", "pid", os.Getpid())
 
 	var llmClient gollm.Client
@@ -172,29 +164,42 @@ func run(ctx context.Context) error {
 
 	var recorder journal.Recorder
 	if *tracePath != "" {
-		recorder, err = journal.NewFileRecorder(*tracePath)
+		fileRecorder, err := journal.NewFileRecorder(*tracePath)
 		if err != nil {
 			return fmt.Errorf("creating trace recorder: %w", err)
 		}
+		defer fileRecorder.Close()
+		recorder = fileRecorder
+	} else {
+		// Ensure we always have a recorder, to avoid nil checks
+		recorder = &journal.LogRecorder{}
 		defer recorder.Close()
+	}
+
+	userInterface, err := ui.NewTerminalUI()
+	if err != nil {
+		return err
 	}
 
 	if queryFromCmd != "" {
 		query := queryFromCmd
 
-		agent := Agent{
-			Model:            *model,
-			Query:            query,
+		strategy := &react.Strategy{
+			Kubeconfig:       kubeconfigPath,
 			ContentGenerator: llmClient,
 			MaxIterations:    *maxIterations,
-			Kubeconfig:       kubeconfigPath,
-			RemoveWorkDir:    *removeWorkDir,
-			templateFile:     *templateFile,
-			markdownRenderer: mdRenderer,
+			TemplateFile:     *templateFile,
+			Tools:            buildTools(),
 			Recorder:         recorder,
+			RemoveWorkDir:    *removeWorkDir,
+			Query:            query,
 		}
-		agent.Execute(ctx)
-		return nil
+		agent := Agent{
+			Model:    *model,
+			Recorder: recorder,
+			Strategy: strategy,
+		}
+		return agent.RunOnce(ctx, userInterface)
 	}
 
 	chatSession := session{
@@ -202,9 +207,9 @@ func run(ctx context.Context) error {
 		Model:   *model,
 	}
 
-	fmt.Printf("\033[31mHey there, what can I help you with today?\033[0m")
+	userInterface.RenderOutput(ctx, "Hey there, what can I help you with today?", ui.Foreground(ui.ColorRed))
 	for {
-		fmt.Printf("\n>> ")
+		userInterface.RenderOutput(ctx, "\n>> ")
 		reader := bufio.NewReader(os.Stdin)
 		query, err := reader.ReadString('\n')
 		if err != nil {
@@ -218,48 +223,52 @@ func run(ctx context.Context) error {
 		switch query {
 		case "reset":
 			chatSession.Queries = []string{}
-			clearScreen()
+			userInterface.ClearScreen()
 		case "clear":
-			clearScreen()
+			userInterface.ClearScreen()
 		case "exit", "quit":
-			fmt.Println("Allright...bye.")
+			userInterface.RenderOutput(ctx, "Allright...bye.")
 			return nil
 		case "models":
-
-			fmt.Println("Available models:")
+			userInterface.RenderOutput(ctx, "Available models")
 			for _, modelName := range availableModels {
-				fmt.Println(modelName)
+				userInterface.RenderOutput(ctx, modelName)
 			}
 		default:
 			if strings.HasPrefix(query, "model") {
 				parts := strings.Split(query, " ")
 				if len(parts) > 2 {
-					fmt.Println("Invalid model command. expected format: model <model-name>")
+					userInterface.RenderOutput(ctx, "Invalid model command. expected format: model <model-name>", ui.Foreground(ui.ColorRed))
 					continue
 				}
 				if len(parts) == 1 {
-					out := fmt.Sprintf("Current model is `%s`\n", chatSession.Model)
-					rendered, _ := mdRenderer.Render(out)
-					fmt.Println(rendered)
+					userInterface.RenderOutput(ctx, fmt.Sprintf("Current model is `%s`\n", chatSession.Model), ui.RenderMarkdown())
 					continue
 				}
 				chatSession.Model = parts[1]
-				fmt.Printf("Model set to `%s`\n", chatSession.Model)
+				userInterface.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
 				continue
 			}
-			agent := Agent{
-				Model:            chatSession.Model,
-				Query:            query,
-				PastQueries:      chatSession.PreviousQueries(),
+			strategy := &react.Strategy{
 				ContentGenerator: llmClient,
 				MaxIterations:    *maxIterations,
-				Kubeconfig:       kubeconfigPath,
-				RemoveWorkDir:    *removeWorkDir,
-				templateFile:     *templateFile,
-				markdownRenderer: mdRenderer,
+				TemplateFile:     *templateFile,
+				Tools:            buildTools(),
 				Recorder:         recorder,
+				RemoveWorkDir:    *removeWorkDir,
+				Query:            query,
+				PastQueries:      chatSession.PreviousQueries(),
+				Kubeconfig:       kubeconfigPath,
 			}
-			agent.Execute(ctx)
+
+			agent := Agent{
+				Model:    chatSession.Model,
+				Recorder: recorder,
+				Strategy: strategy,
+			}
+			if err := agent.RunOnce(ctx, userInterface); err != nil {
+				return err
+			}
 			chatSession.Queries = append(chatSession.Queries, query)
 		}
 	}
@@ -275,6 +284,6 @@ func (s *session) PreviousQueries() string {
 	return strings.Join(s.Queries, "\n")
 }
 
-func clearScreen() {
-	fmt.Print("\033[H\033[2J")
+func (a *Agent) RunOnce(ctx context.Context, userInterface ui.UI) error {
+	return a.Strategy.RunOnce(ctx, userInterface)
 }
