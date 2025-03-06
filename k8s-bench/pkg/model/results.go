@@ -16,5 +16,8 @@ type LLMConfig struct {
 
 	ProviderID string `json:"provider"`
 	ModelID    string `json:"model"`
+
+	Strategy string `json:"strategy"`
+
 	// TODO: Maybe different styles of invocation, or different temperatures etc?
 }

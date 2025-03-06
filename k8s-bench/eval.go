@@ -113,6 +113,7 @@ func evaluateTask(config EvalConfig, taskID string, task Task, llmConfig model.L
 	cmd := exec.Command(config.AgentBin,
 		"--kubeconfig", config.KubeConfig,
 		"--llm-provider", llmConfig.ProviderID,
+		"--strategy", llmConfig.Strategy,
 		"--model", llmConfig.ModelID,
 		task.Goal,
 	)

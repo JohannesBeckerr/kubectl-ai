@@ -66,17 +66,35 @@ func main() {
 	}
 }
 
+type Options struct {
+	Strategy   string
+	ProviderID string
+	ModelID    string
+}
+
+func (o *Options) InitDefaults() {
+	o.Strategy = "react"
+	o.ProviderID = "gemini"
+	o.ModelID = geminiModels[0]
+}
+
 func run(ctx context.Context) error {
 	// Command line flags
+	var opt Options
+	opt.InitDefaults()
+
 	maxIterations := flag.Int("max-iterations", 20, "maximum number of iterations")
 	// default to react because default model doesn't support function calling.
 	agentType := flag.String("agent-type", string(AgentTypeReAct), fmt.Sprintf("agent type e.g. %v", allAgentTypes))
 	kubeconfig := flag.String("kubeconfig", "", "path to the kubeconfig file")
-	llmProvider := flag.String("llm-provider", "gemini", "language model provider")
 	model := flag.String("model", geminiModels[0], "language model")
 	promptTemplateFile := flag.String("prompt-template-file", "", "path to custom prompt template file")
 	tracePath := flag.String("trace-path", "trace.log", "path to the trace file")
 	removeWorkDir := flag.Bool("remove-workdir", false, "remove the temporary working directory after execution")
+
+	flag.StringVar(&opt.ProviderID, "llm-provider", opt.ProviderID, "language model provider")
+	flag.StringVar(&opt.ModelID, "model", opt.ModelID, "language model")
+	flag.StringVar(&opt.Strategy, "strategy", opt.Strategy, "strategy: react or chat-based")
 
 	// add commandline flags for logging
 	klog.InitFlags(nil)
@@ -148,14 +166,14 @@ func run(ctx context.Context) error {
 	var err error
 
 	availableModels := []string{"unknown"}
-	switch *llmProvider {
+	switch opt.ProviderID {
 	case "gemini":
 		geminiClient, err = gollm.NewGeminiClient(ctx)
 		if err != nil {
 			return fmt.Errorf("creating gemini client: %w", err)
 		}
 		defer geminiClient.Close()
-		geminiClient.WithModel(*model)
+		geminiClient.WithModel(opt.ModelID)
 		llmClient = geminiClient
 
 		modelNames, err := geminiClient.ListModels(ctx)
@@ -170,11 +188,11 @@ func run(ctx context.Context) error {
 			return fmt.Errorf("creating vertexai client: %w", err)
 		}
 		defer vertexAIClient.Close()
-		vertexAIClient.WithModel(*model)
+		vertexAIClient.WithModel(opt.ModelID)
 		llmClient = vertexAIClient
 
 	default:
-		return fmt.Errorf("invalid language model provider: %s", *llmProvider)
+		return fmt.Errorf("invalid language model provider: %s", opt.ProviderID)
 	}
 
 	u, err := ui.NewTerminalUI()

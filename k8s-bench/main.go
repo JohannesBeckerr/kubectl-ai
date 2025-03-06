@@ -68,6 +68,7 @@ func run(ctx context.Context) error {
 	llmProvider := "gemini"
 	modelList := ""
 	defaultKubeConfig := "~/.kube/config"
+	strategyList := "chat-based,react"
 
 	flag.StringVar(&config.TasksDir, "tasks-dir", config.TasksDir, "Directory containing evaluation tasks")
 	flag.StringVar(&config.KubeConfig, "kubeconfig", config.KubeConfig, "Path to kubeconfig file")
@@ -75,6 +76,7 @@ func run(ctx context.Context) error {
 	flag.StringVar(&config.AgentBin, "agent-bin", config.AgentBin, "Path to kubernetes agent binary")
 	flag.StringVar(&llmProvider, "llm-provider", llmProvider, "Specific LLM provider to evaluate (e.g. 'gemini' or 'ollama')")
 	flag.StringVar(&modelList, "models", modelList, "Comma-separated list of models to evaluate (e.g. 'gemini-1.0,gemini-2.0')")
+	flag.StringVar(&strategyList, "strategies", strategyList, "Comma-separated list of strategies to evaluate (e.g. 'chat-based,react')")
 	flag.StringVar(&config.OutputDir, "output-dir", config.OutputDir, "Directory to write results to")
 	flag.Parse()
 
@@ -103,14 +105,21 @@ func run(ctx context.Context) error {
 		}
 	}
 
-	for llmProviderID, models := range models {
-		for _, modelID := range models {
-			id := fmt.Sprintf("%s-%s", llmProviderID, modelID)
-			config.LLMConfigs = append(config.LLMConfigs, model.LLMConfig{
-				ID:         id,
-				ProviderID: llmProviderID,
-				ModelID:    modelID,
-			})
+	for _, strategy := range strings.Split(strategyList, ",") {
+		if strategy == "" {
+			continue
+		}
+
+		for llmProviderID, models := range models {
+			for _, modelID := range models {
+				id := fmt.Sprintf("%s-%s-%s", strategy, llmProviderID, modelID)
+				config.LLMConfigs = append(config.LLMConfigs, model.LLMConfig{
+					ID:         id,
+					ProviderID: llmProviderID,
+					ModelID:    modelID,
+					Strategy:   strategy,
+				})
+			}
 		}
 	}
 
