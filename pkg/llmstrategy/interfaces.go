@@ -7,5 +7,5 @@ import (
 )
 
 type Strategy interface {
-	RunOnce(ctx context.Context, userInterface ui.UI) error
+	RunOnce(ctx context.Context, query string, userInterface ui.UI) error
 }

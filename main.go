@@ -27,6 +27,9 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy/chatbased"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy/react"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
@@ -196,11 +199,10 @@ func run(ctx context.Context) error {
 		defer recorder.Close()
 	}
 
-	if queryFromCmd != "" {
-		query := queryFromCmd
-
-		strategy := &Strategy{
-			AgentType:          AgentType(*agentType),
+	var strategy llmstrategy.Strategy
+	switch AgentType(*agentType) {
+	case AgentTypeChatBased:
+		strategy = &chatbased.Strategy{
 			Kubeconfig:         kubeconfigPath,
 			LLM:                llmClient,
 			MaxIterations:      *maxIterations,
@@ -208,14 +210,30 @@ func run(ctx context.Context) error {
 			Tools:              buildTools(),
 			Recorder:           recorder,
 			RemoveWorkDir:      *removeWorkDir,
-			Query:              query,
 		}
+	case AgentTypeReAct:
+		strategy = &react.Strategy{
+			Kubeconfig:         kubeconfigPath,
+			LLM:                llmClient,
+			MaxIterations:      *maxIterations,
+			PromptTemplateFile: *promptTemplateFile,
+			Tools:              buildTools(),
+			Recorder:           recorder,
+			RemoveWorkDir:      *removeWorkDir,
+		}
+	default:
+		return fmt.Errorf("invalid agent type: %s", *agentType)
+	}
+
+	if queryFromCmd != "" {
+		query := queryFromCmd
+
 		agent := Agent{
 			Model:    *model,
 			Recorder: recorder,
 			Strategy: strategy,
 		}
-		return agent.RunOnce(ctx, u)
+		return agent.Strategy.RunOnce(ctx, query, u)
 	}
 
 	chatSession := session{
@@ -265,25 +283,13 @@ func run(ctx context.Context) error {
 				u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
 				continue
 			}
-			strategy := &Strategy{
-				AgentType:          AgentType(*agentType),
-				LLM:                llmClient,
-				MaxIterations:      *maxIterations,
-				PromptTemplateFile: *promptTemplateFile,
-				Tools:              buildTools(),
-				Recorder:           recorder,
-				RemoveWorkDir:      *removeWorkDir,
-				Query:              query,
-				PastQueries:        chatSession.PreviousQueries(),
-				Kubeconfig:         kubeconfigPath,
-			}
 
 			agent := Agent{
 				Model:    chatSession.Model,
 				Recorder: recorder,
 				Strategy: strategy,
 			}
-			if err := agent.RunOnce(ctx, u); err != nil {
+			if err := agent.Strategy.RunOnce(ctx, query, u); err != nil {
 				return err
 			}
 			chatSession.Queries = append(chatSession.Queries, query)
