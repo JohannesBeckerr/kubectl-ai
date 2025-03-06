@@ -26,7 +26,7 @@ import (
 	"syscall"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
-	"github.com/charmbracelet/glamour"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
 
@@ -127,15 +127,6 @@ func run(ctx context.Context) error {
 		queryFromCmd = args[0]
 	}
 
-	mdRenderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithPreservedNewLines(),
-		glamour.WithEmoji(),
-	)
-	if err != nil {
-		return fmt.Errorf("error initializing the markdown renderer: %w", err)
-	}
-
 	klog.Info("Application started", "pid", os.Getpid())
 
 	var llmClient gollm.Client
@@ -170,6 +161,11 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("invalid language model provider: %s", *llmProvider)
 	}
 
+	u, err := ui.NewTerminalUI()
+	if err != nil {
+		return err
+	}
+
 	if queryFromCmd != "" {
 		query := queryFromCmd
 		agent := Agent{
@@ -182,9 +178,8 @@ func run(ctx context.Context) error {
 			Kubeconfig:       kubeconfigPath,
 			RemoveWorkDir:    *removeWorkDir,
 			templateFile:     *templateFile,
-			markdownRenderer: mdRenderer,
 		}
-		agent.Execute(ctx)
+		agent.Execute(ctx, u)
 		return nil
 	}
 
@@ -193,9 +188,10 @@ func run(ctx context.Context) error {
 		Model:   *model,
 	}
 
-	fmt.Printf("\033[31mHey there, what can I help you with today?\033[0m")
+	u.RenderOutput(ctx, fmt.Sprintf("Hey there, what can I help you with today?\n"), ui.Foreground(ui.ColorRed))
+
 	for {
-		fmt.Printf("\n>> ")
+		u.RenderOutput(ctx, "\n>> ")
 		reader := bufio.NewReader(os.Stdin)
 		query, err := reader.ReadString('\n')
 		if err != nil {
@@ -209,11 +205,11 @@ func run(ctx context.Context) error {
 		switch query {
 		case "reset":
 			chatSession.Queries = []string{}
-			clearScreen()
+			u.ClearScreen()
 		case "clear":
-			clearScreen()
+			u.ClearScreen()
 		case "exit", "quit":
-			fmt.Println("Allright...bye.")
+			u.RenderOutput(ctx, "Allright...bye.\n")
 			return nil
 		case "models":
 
@@ -229,13 +225,11 @@ func run(ctx context.Context) error {
 					continue
 				}
 				if len(parts) == 1 {
-					out := fmt.Sprintf("Current model is `%s`\n", chatSession.Model)
-					rendered, _ := mdRenderer.Render(out)
-					fmt.Println(rendered)
+					u.RenderOutput(ctx, fmt.Sprintf("Current model is `%s`\n", chatSession.Model), ui.RenderMarkdown())
 					continue
 				}
 				chatSession.Model = parts[1]
-				fmt.Printf("Model set to `%s`\n", chatSession.Model)
+				u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
 				continue
 			}
 			agent := Agent{
@@ -249,9 +243,8 @@ func run(ctx context.Context) error {
 				Kubeconfig:       kubeconfigPath,
 				RemoveWorkDir:    *removeWorkDir,
 				templateFile:     *templateFile,
-				markdownRenderer: mdRenderer,
 			}
-			agent.Execute(ctx)
+			agent.Execute(ctx, u)
 			chatSession.Queries = append(chatSession.Queries, query)
 		}
 	}
@@ -265,8 +258,4 @@ type session struct {
 
 func (s *session) PreviousQueries() string {
 	return strings.Join(s.Queries, "\n")
-}
-
-func clearScreen() {
-	fmt.Print("\033[H\033[2J")
 }
