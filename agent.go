@@ -11,28 +11,46 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
 
 // Agent knows how to execute a multi-step task. Goal is provided in the query argument.
 type Agent struct {
-	AgentType          AgentType
-	Query              string
-	Model              string
-	PastQueries        string
-	LLM                gollm.Client
-	Messages           []Message
-	MaxIterations      int
-	CurrentIteration   int
-	Kubeconfig         string
-	RemoveWorkDir      bool
-	PromptTemplateFile string
+	Model string
 
 	Recorder journal.Recorder
+
+	Strategy llmstrategy.Strategy
 }
 
-func (a *Agent) Execute(ctx context.Context, u ui.UI) error {
+type Strategy struct {
+	AgentType AgentType
+
+	LLM gollm.Client
+
+	// PromptTemplateFile allows specifying a custom template file
+	PromptTemplateFile string
+
+	// Recorder captures events for diagnostics
+	Recorder journal.Recorder
+
+	RemoveWorkDir bool
+
+	Messages         []Message
+	MaxIterations    int
+	CurrentIteration int
+
+	Query       string
+	PastQueries string
+
+	Kubeconfig string
+
+	Tools map[string]func(input string, kubeconfig string, workDir string) (string, error)
+}
+
+func (a *Strategy) RunOnce(ctx context.Context, u ui.UI) error {
 	switch a.AgentType {
 	case AgentTypeChatBased:
 		return a.ExecuteChatBasedLoop(ctx, u)
@@ -43,7 +61,7 @@ func (a *Agent) Execute(ctx context.Context, u ui.UI) error {
 	}
 }
 
-func (a *Agent) ExecuteReActLoop(ctx context.Context, u ui.UI) error {
+func (a *Strategy) ExecuteReActLoop(ctx context.Context, u ui.UI) error {
 	log := klog.FromContext(ctx)
 	log.Info("Executing query:", "query", a.Query)
 
@@ -120,7 +138,7 @@ func (a *Agent) ExecuteReActLoop(ctx context.Context, u ui.UI) error {
 }
 
 // ExecuteChatBased executes a chat-based agentic loop with the LLM using function calling.
-func (a *Agent) ExecuteChatBasedLoop(ctx context.Context, u ui.UI) error {
+func (a *Strategy) ExecuteChatBasedLoop(ctx context.Context, u ui.UI) error {
 	log := klog.FromContext(ctx)
 	log.Info("Starting chat loop for query:", "query", a.Query)
 	// Create a temporary working directory
@@ -256,37 +274,25 @@ assistant: kubectl get pod my-pod -o jsonpath='{.status.phase}'
 }
 
 // executeAction handles the execution of a single action
-func (a *Agent) executeAction(ctx context.Context, actionName string, actionInput string, workDir string) (string, error) {
+func (a *Strategy) executeAction(ctx context.Context, actionName string, actionInput string, workDir string) (string, error) {
 	log := klog.FromContext(ctx)
 
-	switch actionName {
-	case "kubectl":
-		output, err := kubectlRunner(actionInput, a.Kubeconfig, workDir)
-		if err != nil {
-			return fmt.Sprintf("Error executing kubectl command: %v", err), err
-		}
-		return output, nil
-	case "cat":
-		output, err := bashRunner(actionInput, workDir, a.Kubeconfig)
-		if err != nil {
-			return fmt.Sprintf("Error executing cat command: %v", err), err
-		}
-		return output, nil
-	case "bash":
-		output, err := bashRunner(actionInput, workDir, a.Kubeconfig)
-		if err != nil {
-			return fmt.Sprintf("Error executing bash command: %v", err), err
-		}
-		return output, nil
-	default:
+	tool := a.Tools[actionName]
+	if tool == nil {
 		a.addMessage(ctx, "system", fmt.Sprintf("Error: Tool %s not found", actionName))
 		log.Info("Unknown action: ", "action", actionName)
 		return "", fmt.Errorf("unknown action: %s", actionName)
 	}
+
+	output, err := tool(actionInput, a.Kubeconfig, workDir)
+	if err != nil {
+		return fmt.Sprintf("Error executing %q command: %v", actionName, err), err
+	}
+	return output, nil
 }
 
 // AskLLM asks the LLM for the next action, sending a prompt including the .History
-func (a *Agent) AskLLM(ctx context.Context) (*ReActResponse, error) {
+func (a *Strategy) AskLLM(ctx context.Context) (*ReActResponse, error) {
 	log := klog.FromContext(ctx)
 	log.Info("Asking LLM...")
 
@@ -299,7 +305,7 @@ func (a *Agent) AskLLM(ctx context.Context) (*ReActResponse, error) {
 
 	prompt, err := a.generatePrompt(ctx, defaultReActPromptTemplate, data)
 	if err != nil {
-		fmt.Println("Error generating from template:", err)
+		log.Error(err, "generating from template")
 		return nil, err
 	}
 
@@ -312,7 +318,7 @@ func (a *Agent) AskLLM(ctx context.Context) (*ReActResponse, error) {
 		return nil, fmt.Errorf("generating LLM completion: %w", err)
 	}
 
-	a.record(ctx, &journal.Event{
+	a.Recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "llm-response",
 		Payload:   response,
@@ -329,7 +335,7 @@ func sanitizeToolInput(input string) string {
 	return strings.TrimSpace(input)
 }
 
-func (a *Agent) addMessage(ctx context.Context, role, content string) error {
+func (a *Strategy) addMessage(ctx context.Context, role, content string) error {
 	log := klog.FromContext(ctx)
 	log.Info("Tracing...")
 
@@ -338,7 +344,7 @@ func (a *Agent) addMessage(ctx context.Context, role, content string) error {
 		Content: content,
 	}
 	a.Messages = append(a.Messages, msg)
-	a.record(ctx, &journal.Event{
+	a.Recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "trace",
 		Payload:   msg,
@@ -347,28 +353,15 @@ func (a *Agent) addMessage(ctx context.Context, role, content string) error {
 	return nil
 }
 
-func (a *Agent) recordError(ctx context.Context, err error) error {
-	a.record(ctx, &journal.Event{
+func (a *Strategy) recordError(ctx context.Context, err error) error {
+	return a.Recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "error",
 		Payload:   err.Error(),
 	})
-	return err
 }
 
-func (a *Agent) record(ctx context.Context, event *journal.Event) {
-	log := klog.FromContext(ctx)
-
-	log.Info("Tracing event", "event", event)
-
-	if a.Recorder != nil {
-		if err := a.Recorder.Write(ctx, event); err != nil {
-			log.Error(err, "Error recording event")
-		}
-	}
-}
-
-func (a *Agent) History() string {
+func (a *Strategy) History() string {
 	var history strings.Builder
 	for _, msg := range a.Messages {
 		history.WriteString(fmt.Sprintf("%s: %s\n", msg.Role, msg.Content))
@@ -402,7 +395,7 @@ type Data struct {
 }
 
 // generateFromTemplate generates a prompt for LLM. It uses the prompt from the provides template file or default.
-func (a *Agent) generatePrompt(_ context.Context, defaultPromptTemplate string, data Data) (string, error) {
+func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate string, data Data) (string, error) {
 	var tmpl *template.Template
 	var err error
 
@@ -455,7 +448,7 @@ func parseReActResponse(input string) (*ReActResponse, error) {
 
 	var reActResp ReActResponse
 	if err := json.Unmarshal([]byte(cleaned), &reActResp); err != nil {
-		return nil, fmt.Errorf("parsing json %q: %w", cleaned, err)
+		return nil, fmt.Errorf("parsing JSON %q: %w", cleaned, err)
 	}
 	return &reActResp, nil
 }
