@@ -174,23 +174,31 @@ func run(ctx context.Context) error {
 		}
 		defer fileRecorder.Close()
 		recorder = fileRecorder
+	} else {
+		// Ensure we always have a recorder, to avoid nil checks
+		recorder = &journal.LogRecorder{}
+		defer recorder.Close()
 	}
 
 	if queryFromCmd != "" {
 		query := queryFromCmd
 
-		agent := Agent{
-			Model:            *model,
-			Query:            query,
+		strategy := &Strategy{
+			Kubeconfig:       kubeconfigPath,
 			ContentGenerator: llmClient,
 			MaxIterations:    *maxIterations,
-			Kubeconfig:       kubeconfigPath,
-			RemoveWorkDir:    *removeWorkDir,
-			templateFile:     *templateFile,
+			TemplateFile:     *templateFile,
+			Tools:            buildTools(),
 			Recorder:         recorder,
+			RemoveWorkDir:    *removeWorkDir,
+			Query:            query,
 		}
-		agent.Execute(ctx, u)
-		return nil
+		agent := Agent{
+			Model:    *model,
+			Recorder: recorder,
+			Strategy: strategy,
+		}
+		return agent.RunOnce(ctx, u)
 	}
 
 	chatSession := session{
@@ -198,8 +206,7 @@ func run(ctx context.Context) error {
 		Model:   *model,
 	}
 
-	u.RenderOutput(ctx, fmt.Sprintf("Hey there, what can I help you with today?\n"), ui.Foreground(ui.ColorRed))
-
+	u.RenderOutput(ctx, "Hey there, what can I help you with today?\n", ui.Foreground(ui.ColorRed))
 	for {
 		u.RenderOutput(ctx, "\n>> ")
 		reader := bufio.NewReader(os.Stdin)
@@ -222,16 +229,15 @@ func run(ctx context.Context) error {
 			u.RenderOutput(ctx, "Allright...bye.\n")
 			return nil
 		case "models":
-
-			fmt.Println("Available models:")
+			u.RenderOutput(ctx, "Available models:")
 			for _, modelName := range availableModels {
-				fmt.Println(modelName)
+				u.RenderOutput(ctx, modelName)
 			}
 		default:
 			if strings.HasPrefix(query, "model") {
 				parts := strings.Split(query, " ")
 				if len(parts) > 2 {
-					fmt.Println("Invalid model command. expected format: model <model-name>")
+					u.RenderOutput(ctx, "Invalid model command. expected format: model <model-name>", ui.Foreground(ui.ColorRed))
 					continue
 				}
 				if len(parts) == 1 {
@@ -242,18 +248,26 @@ func run(ctx context.Context) error {
 				u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
 				continue
 			}
-			agent := Agent{
-				Model:            chatSession.Model,
-				Query:            query,
-				PastQueries:      chatSession.PreviousQueries(),
+			strategy := &Strategy{
 				ContentGenerator: llmClient,
 				MaxIterations:    *maxIterations,
-				Kubeconfig:       kubeconfigPath,
-				RemoveWorkDir:    *removeWorkDir,
-				templateFile:     *templateFile,
+				TemplateFile:     *templateFile,
+				Tools:            buildTools(),
 				Recorder:         recorder,
+				RemoveWorkDir:    *removeWorkDir,
+				Query:            query,
+				PastQueries:      chatSession.PreviousQueries(),
+				Kubeconfig:       kubeconfigPath,
 			}
-			agent.Execute(ctx, u)
+
+			agent := Agent{
+				Model:    chatSession.Model,
+				Recorder: recorder,
+				Strategy: strategy,
+			}
+			if err := agent.RunOnce(ctx, u); err != nil {
+				return err
+			}
 			chatSession.Queries = append(chatSession.Queries, query)
 		}
 	}
@@ -267,4 +281,8 @@ type session struct {
 
 func (s *session) PreviousQueries() string {
 	return strings.Join(s.Queries, "\n")
+}
+
+func (a *Agent) RunOnce(ctx context.Context, u ui.UI) error {
+	return a.Strategy.RunOnce(ctx, u)
 }

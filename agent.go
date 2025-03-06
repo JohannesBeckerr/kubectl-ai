@@ -11,27 +11,44 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
 
 // Agent knows how to execute a multi-step task. Goal is provided in the query argument.
 type Agent struct {
-	Query            string
-	Model            string
-	PastQueries      string
+	Model string
+
+	Recorder journal.Recorder
+
+	Strategy llmstrategy.Strategy
+}
+
+type Strategy struct {
+	// TemplateFile allows specifying a custom template file
+	TemplateFile string
+
+	// Recorder captures events for diagnostics
+	Recorder journal.Recorder
+
+	RemoveWorkDir bool
+
 	ContentGenerator gollm.Client
+
 	Messages         []Message
 	MaxIterations    int
 	CurrentIteration int
-	Kubeconfig       string
-	RemoveWorkDir    bool
-	templateFile     string
 
-	Recorder journal.Recorder
+	Query       string
+	PastQueries string
+
+	Kubeconfig string
+
+	Tools map[string]func(input string, kubeconfig string, workDir string) (string, error)
 }
 
-func (a *Agent) Execute(ctx context.Context, u ui.UI) error {
+func (a *Strategy) RunOnce(ctx context.Context, u ui.UI) error {
 	log := klog.FromContext(ctx)
 	log.Info("Executing query:", "query", a.Query)
 
@@ -108,37 +125,25 @@ func (a *Agent) Execute(ctx context.Context, u ui.UI) error {
 }
 
 // executeAction handles the execution of a single action
-func (a *Agent) executeAction(ctx context.Context, action *Action, workDir string) (string, error) {
+func (a *Strategy) executeAction(ctx context.Context, action *Action, workDir string) (string, error) {
 	log := klog.FromContext(ctx)
 
-	switch action.Name {
-	case "kubectl":
-		output, err := kubectlRunner(action.Input, a.Kubeconfig, workDir)
-		if err != nil {
-			return fmt.Sprintf("Error executing kubectl command: %v", err), err
-		}
-		return output, nil
-	case "cat":
-		output, err := bashRunner(action.Input, workDir, a.Kubeconfig)
-		if err != nil {
-			return fmt.Sprintf("Error executing cat command: %v", err), err
-		}
-		return output, nil
-	case "bash":
-		output, err := bashRunner(action.Input, workDir, a.Kubeconfig)
-		if err != nil {
-			return fmt.Sprintf("Error executing bash command: %v", err), err
-		}
-		return output, nil
-	default:
+	tool := a.Tools[action.Name]
+	if tool == nil {
 		a.addMessage(ctx, "system", fmt.Sprintf("Error: Tool %s not found", action.Name))
 		log.Info("Unknown action: ", "action", action.Name)
 		return "", fmt.Errorf("unknown action: %s", action.Name)
 	}
+
+	output, err := tool(action.Input, a.Kubeconfig, workDir)
+	if err != nil {
+		return fmt.Sprintf("Error executing %q command: %v", action.Name, err), err
+	}
+	return output, nil
 }
 
 // AskLLM asks the LLM for the next action, sending a prompt including the .History
-func (a *Agent) AskLLM(ctx context.Context) (*ReActResponse, error) {
+func (a *Strategy) AskLLM(ctx context.Context) (*ReActResponse, error) {
 	log := klog.FromContext(ctx)
 	log.Info("Asking LLM...")
 
@@ -151,7 +156,7 @@ func (a *Agent) AskLLM(ctx context.Context) (*ReActResponse, error) {
 
 	prompt, err := a.generateFromTemplate(data)
 	if err != nil {
-		fmt.Println("Error generating from template:", err)
+		log.Error(err, "generating from template")
 		return nil, err
 	}
 
@@ -164,7 +169,7 @@ func (a *Agent) AskLLM(ctx context.Context) (*ReActResponse, error) {
 		return nil, fmt.Errorf("generating LLM completion: %w", err)
 	}
 
-	a.record(ctx, &journal.Event{
+	a.Recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "llm-response",
 		Payload:   response,
@@ -181,7 +186,7 @@ func sanitizeToolInput(input string) string {
 	return strings.TrimSpace(input)
 }
 
-func (a *Agent) addMessage(ctx context.Context, role, content string) error {
+func (a *Strategy) addMessage(ctx context.Context, role, content string) error {
 	log := klog.FromContext(ctx)
 	log.Info("Tracing...")
 
@@ -190,7 +195,7 @@ func (a *Agent) addMessage(ctx context.Context, role, content string) error {
 		Content: content,
 	}
 	a.Messages = append(a.Messages, msg)
-	a.record(ctx, &journal.Event{
+	a.Recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "trace",
 		Payload:   msg,
@@ -199,28 +204,15 @@ func (a *Agent) addMessage(ctx context.Context, role, content string) error {
 	return nil
 }
 
-func (a *Agent) recordError(ctx context.Context, err error) error {
-	a.record(ctx, &journal.Event{
+func (a *Strategy) recordError(ctx context.Context, err error) error {
+	return a.Recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "error",
 		Payload:   err.Error(),
 	})
-	return err
 }
 
-func (a *Agent) record(ctx context.Context, event *journal.Event) {
-	log := klog.FromContext(ctx)
-
-	log.Info("Tracing event", "event", event)
-
-	if a.Recorder != nil {
-		if err := a.Recorder.Write(ctx, event); err != nil {
-			log.Error(err, "Error recording event")
-		}
-	}
-}
-
-func (a *Agent) History() string {
+func (a *Strategy) History() string {
 	var history strings.Builder
 	for _, msg := range a.Messages {
 		history.WriteString(fmt.Sprintf("%s: %s\n", msg.Role, msg.Content))
@@ -254,13 +246,13 @@ type Data struct {
 }
 
 // generateFromTemplate generates a string from the ReAct template using the provided data.
-func (a *Agent) generateFromTemplate(data Data) (string, error) {
+func (a *Strategy) generateFromTemplate(data Data) (string, error) {
 	var tmpl *template.Template
 	var err error
 
-	if a.templateFile != "" {
+	if a.TemplateFile != "" {
 		// Read custom template file
-		content, err := os.ReadFile(a.templateFile)
+		content, err := os.ReadFile(a.TemplateFile)
 		if err != nil {
 			return "", fmt.Errorf("error reading template file: %v", err)
 		}
@@ -307,7 +299,7 @@ func parseReActResponse(input string) (*ReActResponse, error) {
 
 	var reActResp ReActResponse
 	if err := json.Unmarshal([]byte(cleaned), &reActResp); err != nil {
-		return nil, fmt.Errorf("parsing json %q: %w", cleaned, err)
+		return nil, fmt.Errorf("parsing JSON %q: %w", cleaned, err)
 	}
 	return &reActResp, nil
 }
