@@ -34,6 +34,7 @@ type Client interface {
 // Chat is an active conversation with a language model.
 // Messages are sent and received, and add to a conversation history.
 type Chat interface {
+	Send(ctx context.Context, contents ...any) (ChatResponse, error)
 	SendMessage(ctx context.Context, userParts ...string) (ChatResponse, error)
 	SetFunctionDefinitions(functionDefinitions []*FunctionDefinition) error
 	SendFunctionResults(ctx context.Context, functionResults []FunctionCallResult) (ChatResponse, error)

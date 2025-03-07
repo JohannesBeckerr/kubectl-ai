@@ -234,6 +234,31 @@ func (c *VertexAIChat) SendMessage(ctx context.Context, parts ...string) (ChatRe
 	return &VertexAIChatResponse{vertexaiResponse: vertexaiResponse}, nil
 }
 
+func (c *VertexAIChat) Send(ctx context.Context, contents ...any) (ChatResponse, error) {
+	log := klog.FromContext(ctx)
+	log.Info("sending LLM request", "user", contents)
+
+	var vertexaiParts []genai.Part
+	for _, content := range contents {
+		switch v := content.(type) {
+		case string:
+			vertexaiParts = append(vertexaiParts, genai.Text(v))
+		case FunctionCallResult:
+			vertexaiParts = append(vertexaiParts, genai.FunctionResponse{
+				Name:     v.Name,
+				Response: v.Result,
+			})
+		default:
+			return nil, fmt.Errorf("unexpected type of content: %T", content)
+		}
+	}
+	vertexaiResponse, err := c.chat.SendMessage(ctx, vertexaiParts...)
+	if err != nil {
+		return nil, err
+	}
+	return &VertexAIChatResponse{vertexaiResponse: vertexaiResponse}, nil
+}
+
 // SendFunctionResults sends the results of a function call to the model.
 // It returns a ChatResponse object containing the response from the model.
 func (c *VertexAIChat) SendFunctionResults(ctx context.Context, functionResults []FunctionCallResult) (ChatResponse, error) {

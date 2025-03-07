@@ -231,6 +231,33 @@ func (c *GeminiChat) SendMessage(ctx context.Context, parts ...string) (ChatResp
 	return &GeminiChatResponse{geminiResponse: geminiResponse}, nil
 }
 
+// SendMessage sends a message to the model.
+// It returns a ChatResponse object containing the response from the model.
+func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, error) {
+	log := klog.FromContext(ctx)
+	log.Info("sending LLM request", "user", contents)
+
+	var geminiParts []genai.Part
+	for _, content := range contents {
+		switch v := content.(type) {
+		case string:
+			geminiParts = append(geminiParts, genai.Text(v))
+		case FunctionCallResult:
+			geminiParts = append(geminiParts, genai.FunctionResponse{
+				Name:     v.Name,
+				Response: v.Result,
+			})
+		default:
+			return nil, fmt.Errorf("unexpected type of content: %T", content)
+		}
+	}
+	geminiResponse, err := c.chat.SendMessage(ctx, geminiParts...)
+	if err != nil {
+		return nil, err
+	}
+	return &GeminiChatResponse{geminiResponse: geminiResponse}, nil
+}
+
 // SendFunctionResults sends the results of a function call to the model.
 // It returns a ChatResponse object containing the response from the model.
 func (c *GeminiChat) SendFunctionResults(ctx context.Context, functionResults []FunctionCallResult) (ChatResponse, error) {

@@ -36,6 +36,18 @@ var geminiModels = []string{
 	"gemini-2.0-flash-thinking-exp-01-21",
 }
 
+type AgentType string
+
+const (
+	AgentTypeChatBased AgentType = "chat-based"
+	AgentTypeReAct     AgentType = "react"
+)
+
+var allAgentTypes = []AgentType{
+	AgentTypeChatBased,
+	AgentTypeReAct,
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -57,10 +69,12 @@ func main() {
 func run(ctx context.Context) error {
 	// Command line flags
 	maxIterations := flag.Int("max-iterations", 20, "maximum number of iterations")
+	// default to react because default model doesn't support function calling.
+	agentType := flag.String("agent-type", string(AgentTypeReAct), fmt.Sprintf("agent type e.g. %v", allAgentTypes))
 	kubeconfig := flag.String("kubeconfig", "", "path to the kubeconfig file")
 	llmProvider := flag.String("llm-provider", "gemini", "language model provider")
 	model := flag.String("model", geminiModels[0], "language model")
-	templateFile := flag.String("prompt-template-path", "", "path to custom prompt template file")
+	promptTemplateFile := flag.String("prompt-template-file", "", "path to custom prompt template file")
 	tracePath := flag.String("trace-path", "trace.log", "path to the trace file")
 	removeWorkDir := flag.Bool("remove-workdir", false, "remove the temporary working directory after execution")
 
@@ -130,11 +144,13 @@ func run(ctx context.Context) error {
 	klog.Info("Application started", "pid", os.Getpid())
 
 	var llmClient gollm.Client
+	var geminiClient *gollm.GeminiClient
+	var err error
 
 	availableModels := []string{"unknown"}
 	switch *llmProvider {
 	case "gemini":
-		geminiClient, err := gollm.NewGeminiClient(ctx)
+		geminiClient, err = gollm.NewGeminiClient(ctx)
 		if err != nil {
 			return fmt.Errorf("creating gemini client: %w", err)
 		}
@@ -180,16 +196,20 @@ func run(ctx context.Context) error {
 		query := queryFromCmd
 
 		agent := Agent{
-			Model:            *model,
-			Query:            query,
-			ContentGenerator: llmClient,
-			MaxIterations:    *maxIterations,
-			Kubeconfig:       kubeconfigPath,
-			RemoveWorkDir:    *removeWorkDir,
-			templateFile:     *templateFile,
-			Recorder:         recorder,
+			AgentType:          AgentType(*agentType),
+			Model:              *model,
+			Query:              query,
+			LLM:                llmClient,
+			MaxIterations:      *maxIterations,
+			Kubeconfig:         kubeconfigPath,
+			RemoveWorkDir:      *removeWorkDir,
+			PromptTemplateFile: *promptTemplateFile,
+			Recorder:           recorder,
 		}
-		agent.Execute(ctx, u)
+		err = agent.Execute(ctx, u)
+		if err != nil {
+			return fmt.Errorf("error running agent: %w", err)
+		}
 		return nil
 	}
 
@@ -198,7 +218,7 @@ func run(ctx context.Context) error {
 		Model:   *model,
 	}
 
-	u.RenderOutput(ctx, fmt.Sprintf("Hey there, what can I help you with today?\n"), ui.Foreground(ui.ColorRed))
+	u.RenderOutput(ctx, "Hey there, what can I help you with today?\n", ui.Foreground(ui.ColorRed))
 
 	for {
 		u.RenderOutput(ctx, "\n>> ")
@@ -242,18 +262,23 @@ func run(ctx context.Context) error {
 				u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
 				continue
 			}
+			geminiClient.WithModel(chatSession.Model)
 			agent := Agent{
-				Model:            chatSession.Model,
-				Query:            query,
-				PastQueries:      chatSession.PreviousQueries(),
-				ContentGenerator: llmClient,
-				MaxIterations:    *maxIterations,
-				Kubeconfig:       kubeconfigPath,
-				RemoveWorkDir:    *removeWorkDir,
-				templateFile:     *templateFile,
-				Recorder:         recorder,
+				AgentType:          AgentType(*agentType),
+				Model:              chatSession.Model,
+				Query:              query,
+				PastQueries:        chatSession.PreviousQueries(),
+				LLM:                llmClient,
+				MaxIterations:      *maxIterations,
+				Kubeconfig:         kubeconfigPath,
+				RemoveWorkDir:      *removeWorkDir,
+				PromptTemplateFile: *promptTemplateFile,
+				Recorder:           recorder,
 			}
-			agent.Execute(ctx, u)
+			err = agent.Execute(ctx, u)
+			if err != nil {
+				return fmt.Errorf("error running agent: %w", err)
+			}
 			chatSession.Queries = append(chatSession.Queries, query)
 		}
 	}
