@@ -375,3 +375,7 @@ func (r *GeminiCompletionResponse) Response() string {
 func (r *GeminiCompletionResponse) UsageMetadata() any {
 	return r.geminiResponse.UsageMetadata
 }
+
+func (r *GeminiCompletionResponse) String() string {
+	return fmt.Sprintf("{text=%q}", r.text)
+}
