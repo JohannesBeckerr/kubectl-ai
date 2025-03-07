@@ -17,6 +17,7 @@ package gollm
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -388,10 +389,22 @@ type VertexAICompletionResponse struct {
 
 var _ CompletionResponse = &VertexAICompletionResponse{}
 
+func (r *VertexAICompletionResponse) MarshalJSON() ([]byte, error) {
+	formatted := RecordCompletionResponse{
+		Text: r.text,
+		Raw:  r.vertexaiResponse,
+	}
+	return json.Marshal(&formatted)
+}
+
 func (r *VertexAICompletionResponse) Response() string {
 	return r.text
 }
 
 func (r *VertexAICompletionResponse) UsageMetadata() any {
 	return r.vertexaiResponse.UsageMetadata
+}
+
+func (r *VertexAICompletionResponse) String() string {
+	return fmt.Sprintf("{text=%q}", r.text)
 }
