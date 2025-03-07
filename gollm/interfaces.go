@@ -39,9 +39,7 @@ type Client interface {
 // Messages are sent and received, and add to a conversation history.
 type Chat interface {
 	Send(ctx context.Context, contents ...any) (ChatResponse, error)
-	SendMessage(ctx context.Context, userParts ...string) (ChatResponse, error)
 	SetFunctionDefinitions(functionDefinitions []*FunctionDefinition) error
-	SendFunctionResults(ctx context.Context, functionResults []FunctionCallResult) (ChatResponse, error)
 }
 
 // CompletionRequest is a request to generate a completion for a given prompt.
