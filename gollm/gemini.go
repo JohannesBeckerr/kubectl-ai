@@ -58,6 +58,9 @@ func NewGeminiClient(ctx context.Context) (*GeminiClient, error) {
 type GeminiClient struct {
 	client *genai.Client
 	model  string
+
+	// responseSchema will constrain the output to match the given schema
+	responseSchema *genai.Schema
 }
 
 var _ Client = &GeminiClient{}
@@ -90,10 +93,32 @@ func (c *GeminiClient) WithModel(model string) *GeminiClient {
 	return c
 }
 
+// SetResponseSchema constrains LLM responses to match the provided schema.
+// Calling with nil will clear the current schema.
+func (c *GeminiClient) SetResponseSchema(responseSchema *Schema) error {
+	if responseSchema == nil {
+		c.responseSchema = nil
+		return nil
+	}
+
+	geminiSchema, err := toGeminiSchema(responseSchema)
+	if err != nil {
+		return err
+	}
+
+	c.responseSchema = geminiSchema
+	return nil
+}
+
 func (c *GeminiClient) GenerateCompletion(ctx context.Context, request *CompletionRequest) (CompletionResponse, error) {
 	log := klog.FromContext(ctx)
 
 	model := c.client.GenerativeModel(c.model)
+
+	if c.responseSchema != nil {
+		model.ResponseSchema = c.responseSchema
+		model.ResponseMIMEType = "application/json"
+	}
 
 	var geminiParts []genai.Part
 
@@ -139,6 +164,11 @@ func (c *GeminiClient) StartChat(systemPrompt string) Chat {
 	model.SetTopP(0.95)
 	model.SetMaxOutputTokens(8192)
 	model.ResponseMIMEType = "text/plain"
+
+	if c.responseSchema != nil {
+		model.ResponseSchema = c.responseSchema
+		model.ResponseMIMEType = "application/json"
+	}
 
 	if systemPrompt != "" {
 		model.SystemInstruction = &genai.Content{
@@ -199,6 +229,8 @@ func toGeminiSchema(schema *Schema) (*genai.Schema, error) {
 		ret.Type = genai.TypeObject
 	case TypeString:
 		ret.Type = genai.TypeString
+	case TypeArray:
+		ret.Type = genai.TypeArray
 	default:
 		return nil, fmt.Errorf("type %q not handled by genai.Schema", schema.Type)
 	}
@@ -211,6 +243,13 @@ func toGeminiSchema(schema *Schema) (*genai.Schema, error) {
 			}
 			ret.Properties[k] = geminiValue
 		}
+	}
+	if schema.Items != nil {
+		geminiValue, err := toGeminiSchema(schema.Items)
+		if err != nil {
+			return nil, err
+		}
+		ret.Items = geminiValue
 	}
 	return ret, nil
 }
