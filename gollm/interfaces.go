@@ -29,6 +29,10 @@ type Client interface {
 
 	// GenerateCompletion generates a single completion for a given prompt.
 	GenerateCompletion(ctx context.Context, req *CompletionRequest) (CompletionResponse, error)
+
+	// SetResponseSchema constrains LLM responses to match the provided schema.
+	// Calling with nil will clear the current schema.
+	SetResponseSchema(schema *Schema) error
 }
 
 // Chat is an active conversation with a language model.
@@ -71,6 +75,7 @@ type FunctionDefinition struct {
 type Schema struct {
 	Type        SchemaType         `json:"type,omitempty"`
 	Properties  map[string]*Schema `json:"properties,omitempty"`
+	Items       *Schema            `json:"items,omitempty"`
 	Description string             `json:"description,omitempty"`
 	Required    []string           `json:"required,omitempty"`
 }
@@ -81,6 +86,7 @@ type SchemaType string
 const (
 	TypeObject SchemaType = "object"
 	TypeString SchemaType = "string"
+	TypeArray  SchemaType = "array"
 )
 
 // FunctionCallResult is the result of a function call.

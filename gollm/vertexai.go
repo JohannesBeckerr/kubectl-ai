@@ -79,6 +79,9 @@ func NewVertexAIClient(ctx context.Context) (*VertexAIClient, error) {
 type VertexAIClient struct {
 	client *genai.Client
 	model  string
+
+	// responseSchema will constrain the output to match the given schema
+	responseSchema *genai.Schema
 }
 
 var _ Client = &VertexAIClient{}
@@ -94,10 +97,32 @@ func (c *VertexAIClient) WithModel(model string) *VertexAIClient {
 	return c
 }
 
+// SetResponseSchema constrains LLM responses to match the provided schema.
+// Calling with nil will clear the current schema.
+func (c *VertexAIClient) SetResponseSchema(responseSchema *Schema) error {
+	if responseSchema == nil {
+		c.responseSchema = nil
+		return nil
+	}
+
+	vertexAISchema, err := toVertexAISchema(responseSchema)
+	if err != nil {
+		return err
+	}
+
+	c.responseSchema = vertexAISchema
+	return nil
+}
+
 func (c *VertexAIClient) GenerateCompletion(ctx context.Context, request *CompletionRequest) (CompletionResponse, error) {
 	log := klog.FromContext(ctx)
 
 	model := c.client.GenerativeModel(c.model)
+
+	if c.responseSchema != nil {
+		model.ResponseSchema = c.responseSchema
+		model.ResponseMIMEType = "application/json"
+	}
 
 	var vertexaiParts []genai.Part
 
@@ -143,6 +168,11 @@ func (c *VertexAIClient) StartChat(systemPrompt string) Chat {
 	model.SetTopP(0.95)
 	model.SetMaxOutputTokens(8192)
 	model.ResponseMIMEType = "text/plain"
+
+	if c.responseSchema != nil {
+		model.ResponseSchema = c.responseSchema
+		model.ResponseMIMEType = "application/json"
+	}
 
 	if systemPrompt != "" {
 		model.SystemInstruction = &genai.Content{
@@ -203,6 +233,8 @@ func toVertexAISchema(schema *Schema) (*genai.Schema, error) {
 		ret.Type = genai.TypeObject
 	case TypeString:
 		ret.Type = genai.TypeString
+	case TypeArray:
+		ret.Type = genai.TypeArray
 	default:
 		return nil, fmt.Errorf("type %q not handled by genai.Schema", schema.Type)
 	}
@@ -215,6 +247,13 @@ func toVertexAISchema(schema *Schema) (*genai.Schema, error) {
 			}
 			ret.Properties[k] = vertexaiValue
 		}
+	}
+	if schema.Items != nil {
+		vertexItems, err := toVertexAISchema(schema.Items)
+		if err != nil {
+			return nil, err
+		}
+		ret.Items = vertexItems
 	}
 	return ret, nil
 }
