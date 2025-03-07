@@ -27,6 +27,9 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy/chatbased"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy/react"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
@@ -190,27 +193,47 @@ func run(ctx context.Context) error {
 		}
 		defer fileRecorder.Close()
 		recorder = fileRecorder
+	} else {
+		// Ensure we always have a recorder, to avoid nil checks
+		recorder = &journal.LogRecorder{}
+		defer recorder.Close()
+	}
+
+	var strategy llmstrategy.Strategy
+	switch AgentType(*agentType) {
+	case AgentTypeChatBased:
+		strategy = &chatbased.Strategy{
+			Kubeconfig:         kubeconfigPath,
+			LLM:                llmClient,
+			MaxIterations:      *maxIterations,
+			PromptTemplateFile: *promptTemplateFile,
+			Tools:              buildTools(),
+			Recorder:           recorder,
+			RemoveWorkDir:      *removeWorkDir,
+		}
+	case AgentTypeReAct:
+		strategy = &react.Strategy{
+			Kubeconfig:         kubeconfigPath,
+			LLM:                llmClient,
+			MaxIterations:      *maxIterations,
+			PromptTemplateFile: *promptTemplateFile,
+			Tools:              buildTools(),
+			Recorder:           recorder,
+			RemoveWorkDir:      *removeWorkDir,
+		}
+	default:
+		return fmt.Errorf("invalid agent type: %s", *agentType)
 	}
 
 	if queryFromCmd != "" {
 		query := queryFromCmd
 
 		agent := Agent{
-			AgentType:          AgentType(*agentType),
-			Model:              *model,
-			Query:              query,
-			LLM:                llmClient,
-			MaxIterations:      *maxIterations,
-			Kubeconfig:         kubeconfigPath,
-			RemoveWorkDir:      *removeWorkDir,
-			PromptTemplateFile: *promptTemplateFile,
-			Recorder:           recorder,
+			Model:    *model,
+			Recorder: recorder,
+			Strategy: strategy,
 		}
-		err = agent.Execute(ctx, u)
-		if err != nil {
-			return fmt.Errorf("error running agent: %w", err)
-		}
-		return nil
+		return agent.Strategy.RunOnce(ctx, query, u)
 	}
 
 	chatSession := session{
@@ -219,7 +242,6 @@ func run(ctx context.Context) error {
 	}
 
 	u.RenderOutput(ctx, "Hey there, what can I help you with today?\n", ui.Foreground(ui.ColorRed))
-
 	for {
 		u.RenderOutput(ctx, "\n>> ")
 		reader := bufio.NewReader(os.Stdin)
@@ -242,16 +264,15 @@ func run(ctx context.Context) error {
 			u.RenderOutput(ctx, "Allright...bye.\n")
 			return nil
 		case "models":
-
-			fmt.Println("Available models:")
+			u.RenderOutput(ctx, "Available models:")
 			for _, modelName := range availableModels {
-				fmt.Println(modelName)
+				u.RenderOutput(ctx, modelName)
 			}
 		default:
 			if strings.HasPrefix(query, "model") {
 				parts := strings.Split(query, " ")
 				if len(parts) > 2 {
-					fmt.Println("Invalid model command. expected format: model <model-name>")
+					u.RenderOutput(ctx, "Invalid model command. expected format: model <model-name>", ui.Foreground(ui.ColorRed))
 					continue
 				}
 				if len(parts) == 1 {
@@ -262,22 +283,14 @@ func run(ctx context.Context) error {
 				u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
 				continue
 			}
-			geminiClient.WithModel(chatSession.Model)
+
 			agent := Agent{
-				AgentType:          AgentType(*agentType),
-				Model:              chatSession.Model,
-				Query:              query,
-				PastQueries:        chatSession.PreviousQueries(),
-				LLM:                llmClient,
-				MaxIterations:      *maxIterations,
-				Kubeconfig:         kubeconfigPath,
-				RemoveWorkDir:      *removeWorkDir,
-				PromptTemplateFile: *promptTemplateFile,
-				Recorder:           recorder,
+				Model:    chatSession.Model,
+				Recorder: recorder,
+				Strategy: strategy,
 			}
-			err = agent.Execute(ctx, u)
-			if err != nil {
-				return fmt.Errorf("error running agent: %w", err)
+			if err := agent.Strategy.RunOnce(ctx, query, u); err != nil {
+				return err
 			}
 			chatSession.Queries = append(chatSession.Queries, query)
 		}
@@ -292,4 +305,8 @@ type session struct {
 
 func (s *session) PreviousQueries() string {
 	return strings.Join(s.Queries, "\n")
+}
+
+func (a *Agent) RunOnce(ctx context.Context, u ui.UI) error {
+	return a.Strategy.RunOnce(ctx, u)
 }

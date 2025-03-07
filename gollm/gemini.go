@@ -130,6 +130,10 @@ func (c *GeminiClient) GenerateCompletion(ctx context.Context, request *Completi
 		return nil, err
 	}
 
+	if len(geminiResponse.Candidates) == 0 {
+		return nil, fmt.Errorf("got no responses from gemini")
+	}
+
 	if len(geminiResponse.Candidates) > 1 {
 		log.Info("only considering first candidate")
 		for i := 1; i < len(geminiResponse.Candidates); i++ {
