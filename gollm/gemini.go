@@ -73,7 +73,7 @@ func (c *GeminiClient) ListModels(ctx context.Context) (modelNames []string, err
 		m, err := models.Next()
 		if err != nil {
 			if err == iterator.Done {
-				return modelNames, nil
+				break
 			}
 			return nil, err
 		}
