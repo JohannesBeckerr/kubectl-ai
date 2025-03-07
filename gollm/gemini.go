@@ -256,22 +256,6 @@ func toGeminiSchema(schema *Schema) (*genai.Schema, error) {
 
 // SendMessage sends a message to the model.
 // It returns a ChatResponse object containing the response from the model.
-func (c *GeminiChat) SendMessage(ctx context.Context, parts ...string) (ChatResponse, error) {
-	log := klog.FromContext(ctx)
-	var geminiParts []genai.Part
-	for _, part := range parts {
-		geminiParts = append(geminiParts, genai.Text(part))
-	}
-	log.Info("sending LLM request", "user", parts)
-	geminiResponse, err := c.chat.SendMessage(ctx, geminiParts...)
-	if err != nil {
-		return nil, err
-	}
-	return &GeminiChatResponse{geminiResponse: geminiResponse}, nil
-}
-
-// SendMessage sends a message to the model.
-// It returns a ChatResponse object containing the response from the model.
 func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, error) {
 	log := klog.FromContext(ctx)
 	log.Info("sending LLM request", "user", contents)
@@ -291,24 +275,6 @@ func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, e
 		}
 	}
 	geminiResponse, err := c.chat.SendMessage(ctx, geminiParts...)
-	if err != nil {
-		return nil, err
-	}
-	return &GeminiChatResponse{geminiResponse: geminiResponse}, nil
-}
-
-// SendFunctionResults sends the results of a function call to the model.
-// It returns a ChatResponse object containing the response from the model.
-func (c *GeminiChat) SendFunctionResults(ctx context.Context, functionResults []FunctionCallResult) (ChatResponse, error) {
-	var geminiFunctionResults []genai.Part
-	for _, functionResult := range functionResults {
-		geminiFunctionResults = append(geminiFunctionResults, genai.FunctionResponse{
-			Name:     functionResult.Name,
-			Response: functionResult.Result,
-		})
-	}
-
-	geminiResponse, err := c.chat.SendMessage(ctx, geminiFunctionResults...)
 	if err != nil {
 		return nil, err
 	}

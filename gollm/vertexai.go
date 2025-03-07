@@ -258,22 +258,6 @@ func toVertexAISchema(schema *Schema) (*genai.Schema, error) {
 	return ret, nil
 }
 
-// SendMessage sends a message to the model.
-// It returns a ChatResponse object containing the response from the model.
-func (c *VertexAIChat) SendMessage(ctx context.Context, parts ...string) (ChatResponse, error) {
-	log := klog.FromContext(ctx)
-	var vertexaiParts []genai.Part
-	for _, part := range parts {
-		vertexaiParts = append(vertexaiParts, genai.Text(part))
-	}
-	log.Info("sending LLM request", "user", parts)
-	vertexaiResponse, err := c.chat.SendMessage(ctx, vertexaiParts...)
-	if err != nil {
-		return nil, err
-	}
-	return &VertexAIChatResponse{vertexaiResponse: vertexaiResponse}, nil
-}
-
 func (c *VertexAIChat) Send(ctx context.Context, contents ...any) (ChatResponse, error) {
 	log := klog.FromContext(ctx)
 	log.Info("sending LLM request", "user", contents)
@@ -293,24 +277,6 @@ func (c *VertexAIChat) Send(ctx context.Context, contents ...any) (ChatResponse,
 		}
 	}
 	vertexaiResponse, err := c.chat.SendMessage(ctx, vertexaiParts...)
-	if err != nil {
-		return nil, err
-	}
-	return &VertexAIChatResponse{vertexaiResponse: vertexaiResponse}, nil
-}
-
-// SendFunctionResults sends the results of a function call to the model.
-// It returns a ChatResponse object containing the response from the model.
-func (c *VertexAIChat) SendFunctionResults(ctx context.Context, functionResults []FunctionCallResult) (ChatResponse, error) {
-	var vertexaiFunctionResults []genai.Part
-	for _, functionResult := range functionResults {
-		vertexaiFunctionResults = append(vertexaiFunctionResults, genai.FunctionResponse{
-			Name:     functionResult.Name,
-			Response: functionResult.Result,
-		})
-	}
-
-	vertexaiResponse, err := c.chat.SendMessage(ctx, vertexaiFunctionResults...)
 	if err != nil {
 		return nil, err
 	}
