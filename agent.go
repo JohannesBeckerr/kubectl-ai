@@ -15,15 +15,18 @@
 package main
 
 import (
-	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"context"
+
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 )
 
 // Agent knows how to execute a multi-step task. Goal is provided in the query argument.
 type Agent struct {
-	Model string
-
-	Recorder journal.Recorder
-
 	Strategy llmstrategy.Strategy
+}
+
+// RunOnce executes the agent once to answer the query.
+func (a *Agent) RunOnce(ctx context.Context, query string, u ui.UI) error {
+	return a.Strategy.RunOnce(ctx, query, u)
 }

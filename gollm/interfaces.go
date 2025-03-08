@@ -33,6 +33,9 @@ type Client interface {
 	// SetResponseSchema constrains LLM responses to match the provided schema.
 	// Calling with nil will clear the current schema.
 	SetResponseSchema(schema *Schema) error
+
+	// SetModel sets the model to use for the LLM.
+	SetModel(model string) error
 }
 
 // Chat is an active conversation with a language model.

@@ -86,17 +86,16 @@ func run(ctx context.Context) error {
 	var opt Options
 	opt.InitDefaults()
 
-	maxIterations := flag.Int("max-iterations", 20, "maximum number of iterations")
+	maxIterations := flag.Int("max-iterations", 20, "maximum number of iterations agent will try before giving up")
 	// default to react because default model doesn't support function calling.
 	agentType := flag.String("agent-type", string(AgentTypeReAct), fmt.Sprintf("agent type e.g. %v", allAgentTypes))
 	kubeconfig := flag.String("kubeconfig", "", "path to the kubeconfig file")
-	model := flag.String("model", geminiModels[0], "language model")
 	promptTemplateFile := flag.String("prompt-template-file", "", "path to custom prompt template file")
 	tracePath := flag.String("trace-path", "trace.log", "path to the trace file")
 	removeWorkDir := flag.Bool("remove-workdir", false, "remove the temporary working directory after execution")
 
 	flag.StringVar(&opt.ProviderID, "llm-provider", opt.ProviderID, "language model provider")
-	flag.StringVar(&opt.ModelID, "model", opt.ModelID, "language model")
+	flag.StringVar(&opt.ModelID, "model", opt.ModelID, "language model e.g. gemini-2.0-flash-thinking-exp-01-21, gemini-2.0-flash")
 	flag.StringVar(&opt.Strategy, "strategy", opt.Strategy, "strategy: react or chat-based")
 
 	// add commandline flags for logging
@@ -165,18 +164,16 @@ func run(ctx context.Context) error {
 	klog.Info("Application started", "pid", os.Getpid())
 
 	var llmClient gollm.Client
-	var geminiClient *gollm.GeminiClient
 	var err error
 
 	availableModels := []string{"unknown"}
 	switch opt.ProviderID {
 	case "gemini":
-		geminiClient, err = gollm.NewGeminiClient(ctx)
+		geminiClient, err := gollm.NewGeminiClient(ctx)
 		if err != nil {
 			return fmt.Errorf("creating gemini client: %w", err)
 		}
 		defer geminiClient.Close()
-		geminiClient.WithModel(opt.ModelID)
 		llmClient = geminiClient
 
 		modelNames, err := geminiClient.ListModels(ctx)
@@ -191,11 +188,15 @@ func run(ctx context.Context) error {
 			return fmt.Errorf("creating vertexai client: %w", err)
 		}
 		defer vertexAIClient.Close()
-		vertexAIClient.WithModel(opt.ModelID)
 		llmClient = vertexAIClient
 
 	default:
 		return fmt.Errorf("invalid language model provider: %s", opt.ProviderID)
+	}
+
+	err = llmClient.SetModel(opt.ModelID)
+	if err != nil {
+		return fmt.Errorf("setting model: %w", err)
 	}
 
 	u, err := ui.NewTerminalUI()
@@ -247,16 +248,14 @@ func run(ctx context.Context) error {
 		query := queryFromCmd
 
 		agent := Agent{
-			Model:    *model,
-			Recorder: recorder,
 			Strategy: strategy,
 		}
-		return agent.Strategy.RunOnce(ctx, query, u)
+		return agent.RunOnce(ctx, query, u)
 	}
 
 	chatSession := session{
 		Queries: []string{},
-		Model:   *model,
+		Model:   opt.ModelID,
 	}
 
 	u.RenderOutput(ctx, "Hey there, what can I help you with today?\n", ui.Foreground(ui.ColorRed))
@@ -269,45 +268,38 @@ func run(ctx context.Context) error {
 		}
 		query = strings.TrimSpace(query)
 
-		if query == "" {
+		switch {
+		case query == "":
 			continue
-		}
-		switch query {
-		case "reset":
+		case query == "reset":
 			chatSession.Queries = []string{}
 			u.ClearScreen()
-		case "clear":
+		case query == "clear":
 			u.ClearScreen()
-		case "exit", "quit":
+		case query == "exit" || query == "quit":
 			u.RenderOutput(ctx, "Allright...bye.\n")
 			return nil
-		case "models":
-			u.RenderOutput(ctx, "Available models:")
-			for _, modelName := range availableModels {
-				u.RenderOutput(ctx, modelName)
-			}
-		default:
-			if strings.HasPrefix(query, "model") {
-				parts := strings.Split(query, " ")
-				if len(parts) > 2 {
-					u.RenderOutput(ctx, "Invalid model command. expected format: model <model-name>", ui.Foreground(ui.ColorRed))
-					continue
-				}
-				if len(parts) == 1 {
-					u.RenderOutput(ctx, fmt.Sprintf("Current model is `%s`\n", chatSession.Model), ui.RenderMarkdown())
-					continue
-				}
-				chatSession.Model = parts[1]
-				u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
+		case query == "models":
+			u.RenderOutput(ctx, "\n  Available models:\n", ui.Foreground(ui.ColorGreen))
+			u.RenderOutput(ctx, strings.Join(availableModels, "\n"), ui.RenderMarkdown())
+		case strings.HasPrefix(query, "model"):
+			parts := strings.Split(query, " ")
+			if len(parts) > 2 {
+				u.RenderOutput(ctx, "Invalid model command. expected format: model <model-name>", ui.Foreground(ui.ColorRed))
 				continue
 			}
-
+			if len(parts) == 1 {
+				u.RenderOutput(ctx, fmt.Sprintf("Current model is `%s`\n", chatSession.Model), ui.RenderMarkdown())
+				continue
+			}
+			chatSession.Model = parts[1]
+			_ = llmClient.SetModel(chatSession.Model)
+			u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
+		default:
 			agent := Agent{
-				Model:    chatSession.Model,
-				Recorder: recorder,
 				Strategy: strategy,
 			}
-			if err := agent.Strategy.RunOnce(ctx, query, u); err != nil {
+			if err := agent.RunOnce(ctx, query, u); err != nil {
 				return err
 			}
 			chatSession.Queries = append(chatSession.Queries, query)

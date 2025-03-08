@@ -87,10 +87,11 @@ func (c *GeminiClient) Close() error {
 	return c.client.Close()
 }
 
-// WithModel sets the model to use for the client.
-func (c *GeminiClient) WithModel(model string) *GeminiClient {
+// SetModel sets the model to use for the client.
+func (c *GeminiClient) SetModel(model string) error {
 	c.model = model
-	return c
+	// TODO: validate model
+	return nil
 }
 
 // SetResponseSchema constrains LLM responses to match the provided schema.
