@@ -324,7 +324,3 @@ type session struct {
 func (s *session) PreviousQueries() string {
 	return strings.Join(s.Queries, "\n")
 }
-
-func (a *Agent) RunOnce(ctx context.Context, u ui.UI) error {
-	return a.Strategy.RunOnce(ctx, u)
-}
