@@ -91,10 +91,11 @@ func (c *VertexAIClient) Close() error {
 	return c.client.Close()
 }
 
-// WithModel sets the model to use for the client.
-func (c *VertexAIClient) WithModel(model string) *VertexAIClient {
+// SetModel sets the model to use for the client.
+func (c *VertexAIClient) SetModel(model string) error {
 	c.model = model
-	return c
+	// TODO: validate model
+	return nil
 }
 
 // SetResponseSchema constrains LLM responses to match the provided schema.
