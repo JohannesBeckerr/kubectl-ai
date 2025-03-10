@@ -61,6 +61,9 @@ type Options struct {
 	Strategy   string
 	ProviderID string
 	ModelID    string
+	// AsksForConfirmation is a flag to ask for confirmation before executing kubectl commands
+	// that modifies resources in the cluster.
+	AsksForConfirmation bool
 }
 
 func (o *Options) InitDefaults() {
@@ -68,6 +71,8 @@ func (o *Options) InitDefaults() {
 	o.Strategy = "react"
 	o.ProviderID = "gemini"
 	o.ModelID = geminiModels[0]
+	// default to false because our goal is to make the agent truly autonomous by default
+	o.AsksForConfirmation = false
 }
 
 func run(ctx context.Context) error {
@@ -84,7 +89,7 @@ func run(ctx context.Context) error {
 	flag.StringVar(&opt.ProviderID, "llm-provider", opt.ProviderID, "language model provider")
 	flag.StringVar(&opt.ModelID, "model", opt.ModelID, "language model e.g. gemini-2.0-flash-thinking-exp-01-21, gemini-2.0-flash")
 	flag.StringVar(&opt.Strategy, "strategy", opt.Strategy, "strategy: react or chat-based")
-
+	flag.BoolVar(&opt.AsksForConfirmation, "ask-for-confirmation", opt.AsksForConfirmation, "ask for confirmation before executing kubectl commands that modify resources")
 	// add commandline flags for logging
 	klog.InitFlags(nil)
 
@@ -222,23 +227,25 @@ func run(ctx context.Context) error {
 	switch opt.Strategy {
 	case "chat-based":
 		strategy = &chatbased.Strategy{
-			Kubeconfig:         kubeconfigPath,
-			LLM:                llmClient,
-			MaxIterations:      *maxIterations,
-			PromptTemplateFile: *promptTemplateFile,
-			Tools:              buildTools(),
-			Recorder:           recorder,
-			RemoveWorkDir:      *removeWorkDir,
+			Kubeconfig:          kubeconfigPath,
+			LLM:                 llmClient,
+			MaxIterations:       *maxIterations,
+			PromptTemplateFile:  *promptTemplateFile,
+			Tools:               buildTools(),
+			Recorder:            recorder,
+			RemoveWorkDir:       *removeWorkDir,
+			AsksForConfirmation: opt.AsksForConfirmation,
 		}
 	case "react":
 		strategy = &react.Strategy{
-			Kubeconfig:         kubeconfigPath,
-			LLM:                llmClient,
-			MaxIterations:      *maxIterations,
-			PromptTemplateFile: *promptTemplateFile,
-			Tools:              buildTools(),
-			Recorder:           recorder,
-			RemoveWorkDir:      *removeWorkDir,
+			Kubeconfig:          kubeconfigPath,
+			LLM:                 llmClient,
+			MaxIterations:       *maxIterations,
+			PromptTemplateFile:  *promptTemplateFile,
+			Tools:               buildTools(),
+			Recorder:            recorder,
+			RemoveWorkDir:       *removeWorkDir,
+			AsksForConfirmation: opt.AsksForConfirmation,
 		}
 	default:
 		return fmt.Errorf("invalid strategy: %s", opt.Strategy)

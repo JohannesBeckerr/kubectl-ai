@@ -46,7 +46,8 @@ type Strategy struct {
 
 	PastQueries string
 
-	Kubeconfig string
+	Kubeconfig          string
+	AsksForConfirmation bool
 
 	Tools map[string]func(input string, kubeconfig string, workDir string) (string, error)
 }
@@ -96,6 +97,7 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, u ui.UI) error {
 				"name", reActResp.Action.Name,
 				"reason", reActResp.Action.Reason,
 				"input", reActResp.Action.Input,
+				"modifies_resource", reActResp.Action.ModifiesResource,
 			)
 
 			// Sanitize and prepare action
@@ -105,6 +107,14 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, u ui.UI) error {
 			// Display action details
 			u.RenderOutput(ctx, fmt.Sprintf("  Running: %s", reActResp.Action.Input), ui.Foreground(ui.ColorGreen))
 			u.RenderOutput(ctx, reActResp.Action.Reason, ui.RenderMarkdown())
+
+			if a.AsksForConfirmation && reActResp.Action.ModifiesResource == "yes" {
+				confirm := u.AskForConfirmation(ctx, "  Are you sure you want to run this command (Y/n)?")
+				if !confirm {
+					u.RenderOutput(ctx, "Sure.\n", ui.RenderMarkdown())
+					return nil
+				}
+			}
 
 			// Execute action
 			output, err := a.executeAction(ctx, reActResp.Action.Name, reActResp.Action.Input, workDir)
@@ -230,9 +240,10 @@ type ReActResponse struct {
 }
 
 type Action struct {
-	Name   string `json:"name"`
-	Reason string `json:"reason"`
-	Input  string `json:"input"`
+	Name             string `json:"name"`
+	Reason           string `json:"reason"`
+	Input            string `json:"input"`
+	ModifiesResource string `json:"modifies_resource"`
 }
 
 type Message struct {
@@ -332,7 +343,8 @@ If you need to use a tool:
     "action": {
         "name": "Tool name (kubectl, gcrane, cat, echo)",
         "reason": "Explanation of why you chose this tool (not more than 100 words)",
-        "input": "complete command to be executed."
+        "input": "complete command to be executed.",
+		"modifies_resource": "Whether the command modifies a kubernetes resource. Possible values are 'yes' or 'no' or 'unknown'"
     }
 }
 

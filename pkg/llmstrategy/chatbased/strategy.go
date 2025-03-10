@@ -41,7 +41,8 @@ type Strategy struct {
 	MaxIterations    int
 	CurrentIteration int
 
-	Kubeconfig string
+	Kubeconfig          string
+	AsksForConfirmation bool
 
 	Tools map[string]func(input string, kubeconfig string, workDir string) (string, error)
 }
@@ -80,13 +81,21 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, u ui.UI) error {
 				"command": {
 					Type: gollm.TypeString,
 					Description: `The complete kubectl command to execute. Please including the kubectl prefix as well.
-
 Example:
 user: what pods are running in the cluster?
 assistant: kubectl get pods
 
 user: what is the status of the pod my-pod?
 assistant: kubectl get pod my-pod -o jsonpath='{.status.phase}'
+`,
+				},
+				"modifies_resource": {
+					Type: gollm.TypeString,
+					Description: `Whether the command modifies a kubernetes resource.
+Possible values:
+- "yes" if the command modifies a resource
+- "no" if the command does not modify a resource
+- "unknown" if the command's effect on the resource is unknown
 `,
 				},
 			},
@@ -148,8 +157,16 @@ assistant: kubectl get pod my-pod -o jsonpath='{.status.phase}'
 				for _, call := range calls {
 					functionName := call.Name
 					command, _ := call.Arguments["command"].(string)
-					log.Info("function call", "functionName", functionName, "command", command)
+					modifies_resource, _ := call.Arguments["modifies_resource"].(string)
+					log.Info("function call", "functionName", functionName, "command", command, "modifies_resource", modifies_resource)
 					u.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", command), ui.Foreground(ui.ColorGreen))
+					if a.AsksForConfirmation && modifies_resource == "yes" {
+						confirm := u.AskForConfirmation(ctx, "  Are you sure you want to run this command (Y/n)? ")
+						if !confirm {
+							u.RenderOutput(ctx, "Sure.\n", ui.RenderMarkdown())
+							return nil
+						}
+					}
 
 					output, err := a.executeAction(ctx, functionName, command, workDir)
 					if err != nil {

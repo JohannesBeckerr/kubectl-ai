@@ -17,6 +17,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/glamour"
 	"k8s.io/klog/v2"
@@ -78,4 +79,17 @@ func (u *TerminalUI) RenderOutput(ctx context.Context, s string, styleOptions ..
 
 func (u *TerminalUI) ClearScreen() {
 	fmt.Print("\033[H\033[2J")
+}
+
+func (u *TerminalUI) AskForConfirmation(ctx context.Context, s string) bool {
+	log := klog.FromContext(ctx)
+	fmt.Printf("%s\n", s)
+	var response string
+	_, err := fmt.Scanln(&response)
+	if err != nil {
+		log.Error(err, "Error reading user input")
+		return false
+	}
+	response = strings.ToLower(response)
+	return response == "y" || response == "yes"
 }
