@@ -41,7 +41,13 @@ type Client interface {
 // Chat is an active conversation with a language model.
 // Messages are sent and received, and add to a conversation history.
 type Chat interface {
+	// Send adds a user message to the chat, and gets the response from the LLM.
+	// Note that this method automatically updates the state of the Chat,
+	// you do not need to "replay" any messages from the LLM.
 	Send(ctx context.Context, contents ...any) (ChatResponse, error)
+
+	// SetFunctionDefinitions configures the set of tools (functions) available to the LLM
+	// for function calling.
 	SetFunctionDefinitions(functionDefinitions []*FunctionDefinition) error
 }
 
