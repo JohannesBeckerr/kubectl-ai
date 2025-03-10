@@ -168,6 +168,7 @@ func evaluateTask(ctx context.Context, config EvalConfig, taskID string, task Ta
 		fmt.Printf("\nRunning %s for task %s with %+v\n", config.AgentBin, taskID, llmConfig)
 
 		if err := runCommand(cmd, log); err != nil {
+			result.Result = "fail"
 			result.Error = err.Error()
 			return result
 		}
