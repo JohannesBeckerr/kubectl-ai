@@ -69,7 +69,7 @@ func (r *FileRecorder) Write(ctx context.Context, event *Event) error {
 type Event struct {
 	Timestamp time.Time `json:"timestamp"`
 	Action    string    `json:"action"`
-	Payload   any       `json:"result,omitempty"`
+	Payload   any       `json:"payload,omitempty"`
 }
 
 // WriteToFile appends the given content to a file.

@@ -120,7 +120,6 @@ assistant: kubectl get pod my-pod -o jsonpath='{.status.phase}'
 				// If we have a text response, render it
 				if textResponse != "" {
 					u.RenderOutput(ctx, textResponse, ui.RenderMarkdown())
-					currChatContent = append(currChatContent, textResponse)
 				}
 			}
 
