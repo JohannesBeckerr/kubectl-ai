@@ -257,7 +257,7 @@ func run(ctx context.Context) error {
 		agent := Agent{
 			Strategy: strategy,
 		}
-		return agent.RunOnce(ctx, query, u)
+		return agent.RunOnce(ctx, query, []string{}, u)
 	}
 
 	chatSession := session{
@@ -306,7 +306,7 @@ func run(ctx context.Context) error {
 			agent := Agent{
 				Strategy: strategy,
 			}
-			if err := agent.RunOnce(ctx, query, u); err != nil {
+			if err := agent.RunOnce(ctx, query, chatSession.PreviousQueries(), u); err != nil {
 				return err
 			}
 			chatSession.Queries = append(chatSession.Queries, query)
@@ -320,6 +320,6 @@ type session struct {
 	Model   string   `json:"model"`
 }
 
-func (s *session) PreviousQueries() string {
-	return strings.Join(s.Queries, "\n")
+func (s *session) PreviousQueries() []string {
+	return s.Queries
 }

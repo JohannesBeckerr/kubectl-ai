@@ -16,6 +16,7 @@ package react
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -29,11 +30,15 @@ import (
 	"k8s.io/klog/v2"
 )
 
+//go:embed react_prompt_template_default.txt
+var defaultReActPromptTemplate string
+
 type Strategy struct {
 	LLM gollm.Client
 
 	// PromptTemplateFile allows specifying a custom template file
 	PromptTemplateFile string
+	PreviousQueries    []string
 
 	// Recorder captures events for diagnostics
 	Recorder journal.Recorder
@@ -52,7 +57,7 @@ type Strategy struct {
 	Tools map[string]func(input string, kubeconfig string, workDir string) (string, error)
 }
 
-func (a *Strategy) RunOnce(ctx context.Context, query string, u ui.UI) error {
+func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []string, u ui.UI) error {
 	log := klog.FromContext(ctx)
 	log.Info("Executing query:", "query", query)
 
@@ -162,10 +167,10 @@ func (a *Strategy) AskLLM(ctx context.Context, query string) (*ReActResponse, er
 	log.Info("Asking LLM...")
 
 	data := PromptData{
-		Query:       query,
-		PastQueries: a.PastQueries,
-		History:     a.History(),
-		Tools:       "kubectl, gcrane, bash",
+		Query:           query,
+		PreviousQueries: a.PreviousQueries,
+		History:         a.Messages,
+		Tools:           "kubectl, gcrane, bash",
 	}
 
 	prompt, err := a.generatePrompt(ctx, defaultReActPromptTemplate, data)
@@ -226,8 +231,12 @@ func (a *Strategy) recordError(ctx context.Context, err error) error {
 	})
 }
 
-func (a *Strategy) History() []Message {
-	return a.Messages
+func (a *Strategy) HistoryAsJSON() string {
+	json, err := json.MarshalIndent(a.Messages, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(json)
 }
 
 func (a *Strategy) ResetHistory() {
@@ -254,43 +263,52 @@ type Message struct {
 
 // PromptData represents the structure of the data to be filled into the template.
 type PromptData struct {
-	Query       string
-	PastQueries string
-	History     []Message
-	Tools       string
+	Query           string
+	PreviousQueries []string
+	History         []Message
+	Tools           string
+}
+
+func (a *PromptData) PreviousQueriesAsJSON() string {
+	json, err := json.MarshalIndent(a.PreviousQueries, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(json)
+}
+
+func (a *PromptData) HistoryAsJSON() string {
+	json, err := json.MarshalIndent(a.History, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(json)
 }
 
 // generateFromTemplate generates a prompt for LLM. It uses the prompt from the provides template file or default.
 func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate string, data PromptData) (string, error) {
 	var tmpl *template.Template
 	var err error
-	var contentStr string
 
+	promptTemplate := defaultPromptTemplate
 	if a.PromptTemplateFile != "" {
-		// Read custom template file
 		content, err := os.ReadFile(a.PromptTemplateFile)
 		if err != nil {
 			return "", fmt.Errorf("error reading template file: %v", err)
 		}
-		contentStr = string(content)
-	} else {
-		// Use default template
-		contentStr = defaultPromptTemplate
+		promptTemplate = string(content)
 	}
-	contentStr = strings.ReplaceAll(contentStr, "JSON_BLOCK_START", "```json")
-	contentStr = strings.ReplaceAll(contentStr, "JSON_BLOCK_END", "```")
-	tmpl, err = template.New("promptTemplate").Parse(contentStr)
-	if err != nil {
-		return "", err
-	}
-	// Use a strings.Builder for efficient string concatenation
-	var result strings.Builder
-	// Execute the template, writing the output to the strings.Builder
-	err = tmpl.Execute(&result, data)
+
+	tmpl, err = template.New("promptTemplate").Parse(promptTemplate)
 	if err != nil {
 		return "", err
 	}
 
+	var result strings.Builder
+	err = tmpl.Execute(&result, &data)
+	if err != nil {
+		return "", err
+	}
 	return result.String(), nil
 }
 
@@ -318,66 +336,3 @@ func parseReActResponse(input string) (*ReActResponse, error) {
 	}
 	return &reActResp, nil
 }
-
-// defaultReActPromptTemplate is the default prompt template for the ReAct agent.
-const defaultReActPromptTemplate = `You are a Kubernetes Assistant and your role is to assist a user with their kubernetes related queries and tasks.
-You are tasked with answering the following query:
-<query> {{.Query}} </query>
-Your goal is to reason about the query and decide on the best course of action to answer it accurately.
-
-Previous reasoning steps and observations (if any):
-<previous-steps>
-	{{range .History}}
-	<step>
-		<role>{{.Role}}</role>
-		<content>
-		{{.Content}}
-		</content>
-	</step>
-	{{end}}
-</previous-steps>
-
-Available tools: {{.Tools}}
-
-Instructions:
-1. Analyze the query, previous reasoning steps, and observations.
-2. Decide on the next action: use a tool or provide a final answer.
-3. Respond in the following JSON format:
-
-If you need to use a tool:
-JSON_BLOCK_START
-{
-    "thought": "Your detailed reasoning about what to do next",
-    "action": {
-        "name": "Tool name (kubectl, gcrane, cat, echo)",
-        "reason": "Explanation of why you chose this tool (not more than 100 words)",
-        "input": "complete command to be executed.",
-		"modifies_resource": "Whether the command modifies a kubernetes resource. Possible values are 'yes' or 'no' or 'unknown'"
-    }
-}
-JSON_BLOCK_END
-
-If you have enough information to answer the query:
-JSON_BLOCK_START
-{
-    "thought": "Your final reasoning process",
-    "answer": "Your comprehensive answer to the query"
-}
-JSON_BLOCK_END
-
-Remember:
-- Be thorough in your reasoning.
-- For creating new resources, try to create the resource using the tools available. DO NOT ask the user to create the resource.
-- Prefer the tool usage that does not require any interactive input.
-- Use tools when you need more information. Do not respond with the instructions on how to use the tools or what commands to run, instead just use the tool.
-- Always base your reasoning on the actual observations from tool use.
-- If a tool returns no results or fails, acknowledge this and consider using a different tool or approach.
-- Provide a final answer only when you're confident you have sufficient information.
-- If you cannot find the necessary information after using available tools, admit that you don't have enough information to answer the query confidently.
-- Feel free to respond with emjois where appropriate.
-
-Additional information from the previous queries (if any):
-<previous-queries>
-{{.PastQueries}}
-</previous-queries>
-`

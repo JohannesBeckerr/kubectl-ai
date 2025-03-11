@@ -21,5 +21,5 @@ import (
 )
 
 type Strategy interface {
-	RunOnce(ctx context.Context, query string, userInterface ui.UI) error
+	RunOnce(ctx context.Context, query string, previousQueries []string, userInterface ui.UI) error
 }
