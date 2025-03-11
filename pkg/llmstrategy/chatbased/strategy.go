@@ -16,6 +16,7 @@ package chatbased
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"html/template"
 	"os"
@@ -28,11 +29,15 @@ import (
 	"k8s.io/klog/v2"
 )
 
+//go:embed chatbased_systemprompt_template_default.txt
+var defaultSystemPromptChatAgent string
+
 type Strategy struct {
 	LLM gollm.Client
 
 	// PromptTemplateFile allows specifying a custom template file
 	PromptTemplateFile string
+	PreviousQueries    []string
 
 	// Recorder captures events for diagnostics
 	Recorder journal.Recorder
@@ -49,9 +54,11 @@ type Strategy struct {
 }
 
 // ExecuteChatBased executes a chat-based agentic loop with the LLM using function calling.
-func (a *Strategy) RunOnce(ctx context.Context, query string, u ui.UI) error {
+func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []string, u ui.UI) error {
 	log := klog.FromContext(ctx)
 	log.Info("Starting chat loop for query:", "query", query)
+
+	a.PreviousQueries = previousQueries
 	// Create a temporary working directory
 	workDir, err := os.MkdirTemp("", "agent-workdir-*")
 	if err != nil {
@@ -248,22 +255,19 @@ func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate strin
 	var tmpl *template.Template
 	var err error
 
+	promptTemplate := defaultPromptTemplate
 	if a.PromptTemplateFile != "" {
 		// Read custom template file
 		content, err := os.ReadFile(a.PromptTemplateFile)
 		if err != nil {
 			return "", fmt.Errorf("error reading template file: %v", err)
 		}
-		tmpl, err = template.New("customTemplate").Parse(string(content))
-		if err != nil {
-			return "", fmt.Errorf("error parsing custom template: %v", err)
-		}
-	} else {
-		// Use default template
-		tmpl, err = template.New("promptTemplate").Parse(defaultPromptTemplate)
-		if err != nil {
-			return "", err
-		}
+		promptTemplate = string(content)
+	}
+
+	tmpl, err = template.New("promptTemplate").Parse(promptTemplate)
+	if err != nil {
+		return "", err
 	}
 
 	data := map[string]string{}
@@ -278,20 +282,3 @@ func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate strin
 
 	return result.String(), nil
 }
-
-// system prompt template for the chat based agent.
-const defaultSystemPromptChatAgent = `You are a Kubernetes Assistant and your role is assist the user with their kubernetes related queries and tasks.
-Your goal is to reason about the query and decide on the best course of action to answer it accurately.
-
-Instructions:
-- Be thorough in your reasoning.
-- Don't just reason about the query, but also take actions to answer the query.
-- For creating new resources, try to create the resource using the tools available. DO NOT ask the user to create the resource.
-- Prefer the tool usage that does not require any interactive input.
-- Use tools when you need more information.
-- Always base your reasoning on the actual observations from tool use.
-- If a tool returns no results or fails, acknowledge this and consider using a different tool or approach.
-- Provide a final answer only when you're confident you have sufficient information.
-- If you cannot find the necessary information after using available tools, admit that you don't have enough information to answer the query confidently.
-- Feel free to respond with emojis where appropriate.
-`

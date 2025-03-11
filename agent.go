@@ -27,6 +27,6 @@ type Agent struct {
 }
 
 // RunOnce executes the agent once to answer the query.
-func (a *Agent) RunOnce(ctx context.Context, query string, u ui.UI) error {
-	return a.Strategy.RunOnce(ctx, query, u)
+func (a *Agent) RunOnce(ctx context.Context, query string, previousQueries []string, u ui.UI) error {
+	return a.Strategy.RunOnce(ctx, query, previousQueries, u)
 }
