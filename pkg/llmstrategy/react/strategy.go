@@ -66,6 +66,7 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, u ui.UI) error {
 		defer os.RemoveAll(workDir)
 	}
 	log.Info("Created temporary working directory", "workDir", workDir)
+	a.ResetHistory()
 
 	// Main execution loop
 	for a.CurrentIteration < a.MaxIterations {
@@ -102,7 +103,7 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, u ui.UI) error {
 
 			// Sanitize and prepare action
 			reActResp.Action.Input = sanitizeToolInput(reActResp.Action.Input)
-			a.addMessage(ctx, "assistant", fmt.Sprintf("Action: Using %s tool", reActResp.Action.Name))
+			a.addMessage(ctx, "user", fmt.Sprintf("Action: %q", reActResp.Action.Input))
 
 			// Display action details
 			u.RenderOutput(ctx, fmt.Sprintf("  Running: %s", reActResp.Action.Input), ui.Foreground(ui.ColorGreen))
@@ -124,8 +125,8 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, u ui.UI) error {
 			}
 
 			// Record observation
-			observation := fmt.Sprintf("Observation from %s:\n%s", reActResp.Action.Name, output)
-			a.addMessage(ctx, "system", observation)
+			observation := fmt.Sprintf("Output of %q:\n%s", reActResp.Action.Input, output)
+			a.addMessage(ctx, "user", observation)
 		}
 
 		a.CurrentIteration++
@@ -160,7 +161,7 @@ func (a *Strategy) AskLLM(ctx context.Context, query string) (*ReActResponse, er
 	log := klog.FromContext(ctx)
 	log.Info("Asking LLM...")
 
-	data := Data{
+	data := PromptData{
 		Query:       query,
 		PastQueries: a.PastQueries,
 		History:     a.History(),
@@ -225,12 +226,12 @@ func (a *Strategy) recordError(ctx context.Context, err error) error {
 	})
 }
 
-func (a *Strategy) History() string {
-	var history strings.Builder
-	for _, msg := range a.Messages {
-		history.WriteString(fmt.Sprintf("%s: %s\n", msg.Role, msg.Content))
-	}
-	return history.String()
+func (a *Strategy) History() []Message {
+	return a.Messages
+}
+
+func (a *Strategy) ResetHistory() {
+	a.Messages = []Message{}
 }
 
 type ReActResponse struct {
@@ -251,18 +252,19 @@ type Message struct {
 	Content string `json:"content"`
 }
 
-// Data represents the structure of the data to be filled into the template.
-type Data struct {
+// PromptData represents the structure of the data to be filled into the template.
+type PromptData struct {
 	Query       string
 	PastQueries string
-	History     string
+	History     []Message
 	Tools       string
 }
 
 // generateFromTemplate generates a prompt for LLM. It uses the prompt from the provides template file or default.
-func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate string, data Data) (string, error) {
+func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate string, data PromptData) (string, error) {
 	var tmpl *template.Template
 	var err error
+	var contentStr string
 
 	if a.PromptTemplateFile != "" {
 		// Read custom template file
@@ -270,18 +272,17 @@ func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate strin
 		if err != nil {
 			return "", fmt.Errorf("error reading template file: %v", err)
 		}
-		tmpl, err = template.New("customTemplate").Parse(string(content))
-		if err != nil {
-			return "", fmt.Errorf("error parsing custom template: %v", err)
-		}
+		contentStr = string(content)
 	} else {
 		// Use default template
-		tmpl, err = template.New("promptTemplate").Parse(defaultPromptTemplate)
-		if err != nil {
-			return "", err
-		}
+		contentStr = defaultPromptTemplate
 	}
-
+	contentStr = strings.ReplaceAll(contentStr, "JSON_BLOCK_START", "```json")
+	contentStr = strings.ReplaceAll(contentStr, "JSON_BLOCK_END", "```")
+	tmpl, err = template.New("promptTemplate").Parse(contentStr)
+	if err != nil {
+		return "", err
+	}
 	// Use a strings.Builder for efficient string concatenation
 	var result strings.Builder
 	// Execute the template, writing the output to the strings.Builder
@@ -319,15 +320,21 @@ func parseReActResponse(input string) (*ReActResponse, error) {
 }
 
 // defaultReActPromptTemplate is the default prompt template for the ReAct agent.
-const defaultReActPromptTemplate = `You are a Kubernetes Assistant tasked with answering the following query:
-
+const defaultReActPromptTemplate = `You are a Kubernetes Assistant and your role is to assist a user with their kubernetes related queries and tasks.
+You are tasked with answering the following query:
 <query> {{.Query}} </query>
-
 Your goal is to reason about the query and decide on the best course of action to answer it accurately.
 
 Previous reasoning steps and observations (if any):
 <previous-steps>
-{{.History}}
+	{{range .History}}
+	<step>
+		<role>{{.Role}}</role>
+		<content>
+		{{.Content}}
+		</content>
+	</step>
+	{{end}}
 </previous-steps>
 
 Available tools: {{.Tools}}
@@ -338,6 +345,7 @@ Instructions:
 3. Respond in the following JSON format:
 
 If you need to use a tool:
+JSON_BLOCK_START
 {
     "thought": "Your detailed reasoning about what to do next",
     "action": {
@@ -347,12 +355,15 @@ If you need to use a tool:
 		"modifies_resource": "Whether the command modifies a kubernetes resource. Possible values are 'yes' or 'no' or 'unknown'"
     }
 }
+JSON_BLOCK_END
 
 If you have enough information to answer the query:
+JSON_BLOCK_START
 {
     "thought": "Your final reasoning process",
     "answer": "Your comprehensive answer to the query"
 }
+JSON_BLOCK_END
 
 Remember:
 - Be thorough in your reasoning.
