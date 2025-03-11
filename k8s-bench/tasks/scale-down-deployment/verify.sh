@@ -1,11 +1,11 @@
 #!/bin/bash
-# Wait up to 30 seconds for deployment to scale down to 2 replicas
-for i in {1..30}; do
-    if kubectl get deployment web-service -n scale-down-test -o jsonpath='{.status.availableReplicas}' | grep -q "2"; then
+# Wait for deployment to scale down to 2 replicas with kubectl wait
+if kubectl wait --for=condition=Available=True --timeout=30s deployment/web-service -n scale-down-test; then
+    # Verify the replica count is exactly 2
+    if [ "$(kubectl get deployment web-service -n scale-down-test -o jsonpath='{.status.availableReplicas}')" = "2" ]; then
         exit 0
     fi
-    sleep 1
-done
+fi
 
-# If we get here, deployment didn't scale down in time
+# If we get here, deployment didn't scale down correctly in time
 exit 1 
