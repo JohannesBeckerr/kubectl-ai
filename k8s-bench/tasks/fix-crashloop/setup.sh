@@ -1,4 +1,5 @@
 #!/bin/bash
+kubectl delete namespace crashloop-test --ignore-not-found
 # Create namespace and a deployment with an invalid command that will cause crashloop
 kubectl create namespace crashloop-test
 cat <<EOF | kubectl apply -f -

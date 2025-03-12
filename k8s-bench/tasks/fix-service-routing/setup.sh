@@ -1,5 +1,6 @@
 #!/bin/bash
 # Create namespace and deployment with one set of labels
+kubectl delete namespace web --ignore-not-found
 kubectl create namespace web
 
 # Create deployment with label app=nginx
