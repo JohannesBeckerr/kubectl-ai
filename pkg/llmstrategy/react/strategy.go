@@ -102,16 +102,16 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 			log.Info("Executing action",
 				"name", reActResp.Action.Name,
 				"reason", reActResp.Action.Reason,
-				"input", reActResp.Action.Input,
+				"command", reActResp.Action.Command,
 				"modifies_resource", reActResp.Action.ModifiesResource,
 			)
 
 			// Sanitize and prepare action
-			reActResp.Action.Input = sanitizeToolInput(reActResp.Action.Input)
-			a.addMessage(ctx, "user", fmt.Sprintf("Action: %q", reActResp.Action.Input))
+			reActResp.Action.Command = sanitizeToolInput(reActResp.Action.Command)
+			a.addMessage(ctx, "user", fmt.Sprintf("Action: %q", reActResp.Action.Command))
 
 			// Display action details
-			u.RenderOutput(ctx, fmt.Sprintf("  Running: %s", reActResp.Action.Input), ui.Foreground(ui.ColorGreen))
+			u.RenderOutput(ctx, fmt.Sprintf("  Running: %s", reActResp.Action.Command), ui.Foreground(ui.ColorGreen))
 			u.RenderOutput(ctx, reActResp.Action.Reason, ui.RenderMarkdown())
 
 			if a.AsksForConfirmation && reActResp.Action.ModifiesResource == "yes" {
@@ -123,14 +123,14 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 			}
 
 			// Execute action
-			output, err := a.executeAction(ctx, reActResp.Action.Name, reActResp.Action.Input, workDir)
+			output, err := a.executeAction(ctx, reActResp.Action.Name, reActResp.Action.Command, workDir)
 			if err != nil {
 				log.Error(err, "Error executing action")
 				return err
 			}
 
 			// Record observation
-			observation := fmt.Sprintf("Output of %q:\n%s", reActResp.Action.Input, output)
+			observation := fmt.Sprintf("Output of %q:\n%s", reActResp.Action.Command, output)
 			a.addMessage(ctx, "user", observation)
 		}
 
@@ -252,7 +252,7 @@ type ReActResponse struct {
 type Action struct {
 	Name             string `json:"name"`
 	Reason           string `json:"reason"`
-	Input            string `json:"input"`
+	Command          string `json:"command"`
 	ModifiesResource string `json:"modifies_resource"`
 }
 
