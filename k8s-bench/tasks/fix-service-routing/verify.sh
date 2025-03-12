@@ -1,6 +1,6 @@
 #!/bin/bash
-# Wait up to 30 seconds for service endpoints to be created
-for i in {1..30}; do
+# Wait for service endpoints to be ready
+if kubectl wait --for=condition=Available --timeout=30s service/nginx -n web; then
     # Check if service has endpoints
     endpoints=$(kubectl get endpoints nginx -n web -o jsonpath='{.subsets[0].addresses}')
     if [[ ! -z "$endpoints" ]]; then
@@ -10,8 +10,7 @@ for i in {1..30}; do
             exit 0
         fi
     fi
-    sleep 1
-done
+fi
 
 # If we get here, service connection failed
 exit 1 
