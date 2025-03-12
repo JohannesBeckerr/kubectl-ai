@@ -37,15 +37,11 @@ func buildTools() map[string]func(input string, kubeconfig string, workDir strin
 
 // kubectlRunner executes a kubectl command with the specified kubeconfig and returns the output.
 func kubectlRunner(command string, kubeconfig string, workDir string) (string, error) {
-	args := strings.Fields(command)
-	if len(args) >= 2 && args[0] == "kubectl" && args[1] == "edit" {
+	if strings.Contains(command, "kubectl edit") {
 		return "interactive mode not supported for kubectl, please use non-interactive commands", nil
 	}
-	if containsStdIn(args) {
-		return "stdin not supported for kubectl, please use non-interactive commands or use cat to create temporary files", nil
-	}
 
-	cmd := exec.Command(bashBin, "-c", strings.Join(args, " "))
+	cmd := exec.Command(bashBin, "-c", command)
 	cmd.Env = os.Environ()
 	cmd.Dir = workDir
 
@@ -59,6 +55,9 @@ func kubectlRunner(command string, kubeconfig string, workDir string) (string, e
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if strings.Contains(string(output), "command not found") {
+			return "error: command not found. Note that if its a kubectl command, please specify the full command including the kubectl prefix, for example: 'kubectl get pods'", nil
+		}
 		return string(output), nil
 	}
 	return string(output), nil
@@ -95,13 +94,4 @@ func bashRunner(command string, kubeconfig string, workDir string) (string, erro
 		return string(output), err
 	}
 	return string(output), nil
-}
-
-func containsStdIn(args []string) bool {
-	for _, arg := range args {
-		if arg == "-" {
-			return true
-		}
-	}
-	return false
 }
