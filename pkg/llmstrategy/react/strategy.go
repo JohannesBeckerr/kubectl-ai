@@ -26,6 +26,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
@@ -54,7 +55,7 @@ type Strategy struct {
 	Kubeconfig          string
 	AsksForConfirmation bool
 
-	Tools map[string]func(input string, kubeconfig string, workDir string) (string, error)
+	Tools tools.Tools
 }
 
 func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []string, u ui.UI) error {
@@ -123,7 +124,7 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 			}
 
 			// Execute action
-			output, err := a.executeAction(ctx, reActResp.Action.Name, reActResp.Action.Command, workDir)
+			output, err := a.executeAction(ctx, reActResp.Action, workDir)
 			if err != nil {
 				log.Error(err, "Error executing action")
 				return err
@@ -144,21 +145,27 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 }
 
 // executeAction handles the execution of a single action
-func (a *Strategy) executeAction(ctx context.Context, actionName string, actionInput string, workDir string) (string, error) {
+func (a *Strategy) executeAction(ctx context.Context, action *Action, workDir string) (string, error) {
 	log := klog.FromContext(ctx)
 
-	tool := a.Tools[actionName]
+	tool := a.Tools.Lookup(action.Name)
 	if tool == nil {
-		a.addMessage(ctx, "system", fmt.Sprintf("Error: Tool %s not found", actionName))
-		log.Info("Unknown action: ", "action", actionName)
-		return "", fmt.Errorf("unknown action: %s", actionName)
+		a.addMessage(ctx, "system", fmt.Sprintf("Error: Tool %s not found", action.Name))
+		log.Info("Unknown action: ", "action", action.Name)
+		return "", fmt.Errorf("unknown action: %s", action.Name)
 	}
 
-	output, err := tool(actionInput, a.Kubeconfig, workDir)
+	ctx = context.WithValue(ctx, "kubeconfig", a.Kubeconfig)
+	ctx = context.WithValue(ctx, "work_dir", workDir)
+
+	output, err := tool.Run(ctx, map[string]any{
+		"command":           action.Command,
+		"modifies_resource": action.ModifiesResource,
+	})
 	if err != nil {
-		return fmt.Sprintf("Error executing %q command: %v", actionName, err), err
+		return fmt.Sprintf("Error executing %q command: %v", action.Command, err), err
 	}
-	return output, nil
+	return output.(string), nil
 }
 
 // AskLLM asks the LLM for the next action, sending a prompt including the .History
@@ -170,7 +177,7 @@ func (a *Strategy) AskLLM(ctx context.Context, query string) (*ReActResponse, er
 		Query:           query,
 		PreviousQueries: a.PreviousQueries,
 		History:         a.Messages,
-		Tools:           "kubectl, gcrane, bash",
+		Tools:           strings.Join(a.Tools.Names(), ", "),
 	}
 
 	prompt, err := a.generatePrompt(ctx, defaultReActPromptTemplate, data)

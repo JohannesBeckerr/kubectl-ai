@@ -25,6 +25,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
@@ -50,7 +51,7 @@ type Strategy struct {
 	Kubeconfig          string
 	AsksForConfirmation bool
 
-	Tools map[string]func(input string, kubeconfig string, workDir string) (string, error)
+	Tools tools.Tools
 }
 
 // ExecuteChatBased executes a chat-based agentic loop with the LLM using function calling.
@@ -79,41 +80,11 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 	// Start a new chat session
 	chat := a.LLM.StartChat(systemPrompt)
 
-	// Define the kubectl function
-	kubectlFunction := &gollm.FunctionDefinition{
-		Name:        "kubectl",
-		Description: "Executes a kubectl command against user's Kubernetes cluster. Use this tool only when you need to query or modify the state of user's Kubernetes cluster.",
-		Parameters: &gollm.Schema{
-			Type: gollm.TypeObject,
-			Properties: map[string]*gollm.Schema{
-				"command": {
-					Type: gollm.TypeString,
-					Description: `The complete kubectl command to execute. Please including the kubectl prefix as well.
-Example:
-user: what pods are running in the cluster?
-assistant: kubectl get pods
-
-user: what is the status of the pod my-pod?
-assistant: kubectl get pod my-pod -o jsonpath='{.status.phase}'
-`,
-				},
-				"modifies_resource": {
-					Type: gollm.TypeString,
-					Description: `Whether the command modifies a kubernetes resource.
-Possible values:
-- "yes" if the command modifies a resource
-- "no" if the command does not modify a resource
-- "unknown" if the command's effect on the resource is unknown
-`,
-				},
-			},
-		},
-	}
-
-	// make the tools available to the LLM
-	if err := chat.SetFunctionDefinitions([]*gollm.FunctionDefinition{kubectlFunction}); err != nil {
-		log.Error(err, "Failed to set function definitions")
-		return err
+	for _, tool := range a.Tools {
+		if err := chat.SetFunctionDefinitions([]*gollm.FunctionDefinition{tool.FunctionDefinition()}); err != nil {
+			log.Error(err, "Failed to set function definitions")
+			return err
+		}
 	}
 
 	// currChatContent tracks chat content that needs to be sent
@@ -176,11 +147,9 @@ Possible values:
 				// (may have to specify in the prompt to make these function calls independent)
 				for _, call := range calls {
 					functionName := call.Name
-					command, _ := call.Arguments["command"].(string)
-					modifies_resource, _ := call.Arguments["modifies_resource"].(string)
-					log.Info("function call", "functionName", functionName, "command", command, "modifies_resource", modifies_resource)
-					u.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", command), ui.Foreground(ui.ColorGreen))
-					if a.AsksForConfirmation && modifies_resource == "yes" {
+					log.Info("function call", "functionName", functionName, "command", call.Arguments["command"], "modifies_resource", call.Arguments["modifies_resource"])
+					u.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", call.Arguments["command"]), ui.Foreground(ui.ColorGreen))
+					if a.AsksForConfirmation && call.Arguments["modifies_resource"] == "no" {
 						confirm := u.AskForConfirmation(ctx, "  Are you sure you want to run this command (Y/n)? ")
 						if !confirm {
 							u.RenderOutput(ctx, "Sure.\n", ui.RenderMarkdown())
@@ -188,7 +157,7 @@ Possible values:
 						}
 					}
 
-					output, err := a.executeAction(ctx, functionName, command, workDir)
+					output, err := a.executeAction(ctx, call, workDir)
 					if err != nil {
 						log.Error(err, "Error executing action")
 						return err
@@ -197,7 +166,7 @@ Possible values:
 					currChatContent = append(currChatContent, gollm.FunctionCallResult{
 						Name: functionName,
 						Result: map[string]any{
-							"command": command,
+							"command": call.Arguments["command"],
 							"output":  output,
 						},
 					})
@@ -221,24 +190,27 @@ Possible values:
 }
 
 // executeAction handles the execution of a single action
-func (a *Strategy) executeAction(ctx context.Context, actionName string, actionInput string, workDir string) (string, error) {
+func (a *Strategy) executeAction(ctx context.Context, call gollm.FunctionCall, workDir string) (string, error) {
 	log := klog.FromContext(ctx)
 
-	tool := a.Tools[actionName]
+	tool := a.Tools.Lookup(call.Name)
 	if tool == nil {
-		log.Info("Unknown action: ", "action", actionName)
-		return "", fmt.Errorf("tool %q not found", actionName)
+		log.Info("Unknown action: ", "action", call.Name)
+		return "", fmt.Errorf("tool %q not found", call.Name)
 	}
 
 	a.Recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "tool-request",
-		Payload:   actionInput,
+		Payload:   call.Arguments,
 	})
 
-	output, err := tool(actionInput, a.Kubeconfig, workDir)
+	ctx = context.WithValue(ctx, "work_dir", workDir)
+	ctx = context.WithValue(ctx, "kubeconfig", a.Kubeconfig)
+
+	output, err := tool.Run(ctx, call.Arguments)
 	if err != nil {
-		return fmt.Sprintf("Error executing %q command: %v", actionName, err), err
+		return fmt.Sprintf("Error executing %q command: %v", call.Name, err), err
 	}
 
 	a.Recorder.Write(ctx, &journal.Event{
@@ -247,7 +219,7 @@ func (a *Strategy) executeAction(ctx context.Context, actionName string, actionI
 		Payload:   output,
 	})
 
-	return output, nil
+	return output.(string), nil
 }
 
 // generateFromTemplate generates a prompt for LLM. It uses the prompt from the provides template file or default.

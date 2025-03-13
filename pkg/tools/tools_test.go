@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package tools
 
 import (
 	"errors"
@@ -29,11 +29,6 @@ func TestKubectlRunner(t *testing.T) {
 		expectedFile        string
 		expectedFileContent string
 	}{
-		// {
-		// 	command: "kubectl get pods",
-		// 	expected:    "pods",
-		// 	expectedErr: nil,
-		// },
 		{
 			command:     "kubectl edit pods",
 			expected:    "interactive mode not supported for kubectl, please use non-interactive commands",
@@ -60,7 +55,6 @@ spec:
            port:
              number: 80
 EOF`,
-			// expected:    "",
 			expectedErr:  nil,
 			expectedFile: "ingress.yaml",
 			expectedFileContent: `apiVersion: networking.k8s.io/v1

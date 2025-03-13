@@ -22,7 +22,7 @@ If you need to use a tool:
     "thought": "Your detailed reasoning about what to do next",
     "action": {
         "name": "Tool name ({{.Tools}})",
-        "reason": "Explanation of why you chosse this tool (not more than 100 words)",
+        "reason": "Explanation of why you chose this tool (not more than 100 words)",
         "command": "Complete command to be executed. For example, 'kubectl get pods', 'kubectl get ns'",
         "modifies_resource": "Whether the command modifies a kubernetes resource. Possible values are 'yes' or 'no' or 'unknown'"
     }

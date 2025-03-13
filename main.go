@@ -30,6 +30,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy/chatbased"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy/react"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
 )
@@ -231,7 +232,7 @@ func run(ctx context.Context) error {
 			LLM:                 llmClient,
 			MaxIterations:       *maxIterations,
 			PromptTemplateFile:  *promptTemplateFile,
-			Tools:               buildTools(),
+			Tools:               tools.All(),
 			Recorder:            recorder,
 			RemoveWorkDir:       *removeWorkDir,
 			AsksForConfirmation: opt.AsksForConfirmation,
@@ -242,7 +243,7 @@ func run(ctx context.Context) error {
 			LLM:                 llmClient,
 			MaxIterations:       *maxIterations,
 			PromptTemplateFile:  *promptTemplateFile,
-			Tools:               buildTools(),
+			Tools:               tools.All(),
 			Recorder:            recorder,
 			RemoveWorkDir:       *removeWorkDir,
 			AsksForConfirmation: opt.AsksForConfirmation,
