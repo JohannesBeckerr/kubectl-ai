@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"html/template"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -80,11 +81,17 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 	// Start a new chat session
 	chat := a.LLM.StartChat(systemPrompt)
 
+	var functionDefinitions []*gollm.FunctionDefinition
 	for _, tool := range a.Tools {
-		if err := chat.SetFunctionDefinitions([]*gollm.FunctionDefinition{tool.FunctionDefinition()}); err != nil {
-			log.Error(err, "Failed to set function definitions")
-			return err
-		}
+		functionDefinitions = append(functionDefinitions, tool.FunctionDefinition())
+	}
+	// Sort function definitions to help KV cache reuse
+	sort.Slice(functionDefinitions, func(i, j int) bool {
+		return functionDefinitions[i].Name < functionDefinitions[j].Name
+	})
+	if err := chat.SetFunctionDefinitions(functionDefinitions); err != nil {
+		log.Error(err, "Failed to set function definitions")
+		return err
 	}
 
 	// currChatContent tracks chat content that needs to be sent

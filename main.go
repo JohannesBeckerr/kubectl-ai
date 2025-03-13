@@ -196,6 +196,16 @@ func run(ctx context.Context) error {
 			return fmt.Errorf("listing ollama models: %w", err)
 		}
 		availableModels = modelNames
+	case "llamacpp":
+		llamacppClient, err := gollm.NewLlamaCppClient(ctx)
+		if err != nil {
+			return fmt.Errorf("creating llama.cpp client: %w", err)
+		}
+		defer llamacppClient.Close()
+		llmClient = llamacppClient
+
+		// Does not support models
+		availableModels = nil
 	default:
 		return fmt.Errorf("invalid language model provider: %s", opt.ProviderID)
 	}
