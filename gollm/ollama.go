@@ -66,9 +66,7 @@ func (c *OllamaClient) GenerateCompletion(ctx context.Context, request *Completi
 	req := &api.GenerateRequest{
 		Model:  c.model,
 		Prompt: request.Prompt,
-
-		// set streaming to false
-		Stream: new(bool),
+		Stream: ptrTo(false),
 	}
 
 	var ollamaResponse *OllamaCompletionResponse

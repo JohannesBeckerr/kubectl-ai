@@ -39,6 +39,8 @@ func NewClient(ctx context.Context) (Client, error) {
 		return NewVertexAIClient(ctx)
 	case "ollama":
 		return NewOllamaClient(ctx)
+	case "llamacpp":
+		return NewLlamaCppClient(ctx)
 	default:
 		return nil, fmt.Errorf("unknown LLM_CLIENT scheme %q", u.Scheme)
 	}
