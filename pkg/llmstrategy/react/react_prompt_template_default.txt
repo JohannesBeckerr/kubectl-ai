@@ -50,7 +50,9 @@ run, instead just use the tool.
 answer the query confidently.
 - Feel free to respond with emjois where appropriate.
 
+{{if .PreviousQueries}}
 Previous user queries (Use these to resolve ambiguous queries):
 <previous-queries>
 {{.PreviousQueriesAsJSON}}
 </previous-queries>
+{{end}}
