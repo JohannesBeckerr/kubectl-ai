@@ -234,6 +234,10 @@ func toVertexAISchema(schema *Schema) (*genai.Schema, error) {
 		ret.Type = genai.TypeObject
 	case TypeString:
 		ret.Type = genai.TypeString
+	case TypeBoolean:
+		ret.Type = genai.TypeBoolean
+	case TypeInteger:
+		ret.Type = genai.TypeInteger
 	case TypeArray:
 		ret.Type = genai.TypeArray
 	default:

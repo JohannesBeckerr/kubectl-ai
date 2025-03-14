@@ -92,8 +92,11 @@ type SchemaType string
 
 const (
 	TypeObject SchemaType = "object"
-	TypeString SchemaType = "string"
 	TypeArray  SchemaType = "array"
+
+	TypeString  SchemaType = "string"
+	TypeBoolean SchemaType = "boolean"
+	TypeInteger SchemaType = "integer"
 )
 
 // FunctionCallResult is the result of a function call.

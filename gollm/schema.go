@@ -29,6 +29,10 @@ func BuildSchemaFor(t reflect.Type) *Schema {
 	switch t.Kind() {
 	case reflect.String:
 		out.Type = TypeString
+	case reflect.Bool:
+		out.Type = TypeBoolean
+	case reflect.Int:
+		out.Type = TypeInteger
 	case reflect.Struct:
 		out.Type = TypeObject
 		out.Properties = make(map[string]*Schema)
