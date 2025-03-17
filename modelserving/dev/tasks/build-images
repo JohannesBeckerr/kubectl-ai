@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SRC_DIR=${REPO_ROOT}/modelserving
+cd "${SRC_DIR}"
+
+if [[ -z "${IMAGE_PREFIX:-}" ]]; then
+  IMAGE_PREFIX=""
+fi
+echo "Building images with prefix ${IMAGE_PREFIX}"
+
+if [[ -z "${TAG:-}" ]]; then
+  TAG=latest
+fi
+
+docker buildx build --load -f images/llamacpp-server/Dockerfile -t llamacpp-server:latest --progress=plain .
+docker buildx build --load -f images/llamacpp-gemma3-12b-it/Dockerfile -t ${IMAGE_PREFIX}llamacpp-gemma3-12b-it:${TAG} --progress=plain .

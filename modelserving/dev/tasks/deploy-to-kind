@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SRC_DIR=${REPO_ROOT}/modelserving
+cd "${SRC_DIR}"
+
+# Pick a probably-unique tag
+export TAG=`date +%Y%m%d%H%M%S`
+
+# Build the image
+echo "Building images"
+export IMAGE_PREFIX=fake.registry/
+PLATFORMS=linux/$(go env GOARCH) PUSH_FLAGS=--local dev/tasks/build-images
+
+MODEL_IMAGE="${IMAGE_PREFIX:-}llamacpp-gemma3-12b-it:${TAG}"
+
+# Load the image into kind
+echo "Loading image ${MODEL_IMAGE} into kind"
+kind load docker-image ${MODEL_IMAGE}
+
+# Deploy manifests
+echo "Deploying manifests"
+cat k8s/llm-server.yaml | sed s@fake.registry/llm-image:latest@${MODEL_IMAGE}@g | \
+  kubectl apply --server-side -f -
