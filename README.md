@@ -25,6 +25,15 @@ cd kubectl-ai
 go install .
 ```
 
+### Invoking
+
+`kubectl-ai` can be launched in two ways:
+
+- Run the binary `kubectl-ai` 
+- Use it via the `kubectl` plug interface like this: `kubectl ai`.  kubectl will find `kubectl-ai` as long as it's in your PATH.  For more information about plugins please see: https://kubernetes.io/docs/tasks/extend-kubectl/kubectl-plugins/ 
+
+In the examples below we will use `kubectl-ai` invocation method.
+
 ### Environment Setup
 
 Set up Gemini API key as follows:
