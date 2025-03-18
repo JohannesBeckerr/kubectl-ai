@@ -4,6 +4,8 @@ go 1.24.0
 
 toolchain go1.24.1
 
+replace github.com/GoogleCloudPlatform/kubectl-ai => ./..
+
 require (
 	github.com/GoogleCloudPlatform/kubectl-ai v0.0.0-20250317140348-3b34c8984b9b
 	sigs.k8s.io/yaml v1.4.0
