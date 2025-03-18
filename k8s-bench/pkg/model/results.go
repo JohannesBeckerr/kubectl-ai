@@ -14,14 +14,24 @@
 
 package model
 
+import "fmt"
+
 type TaskResult struct {
 	Task      string    `json:"name"`
 	LLMConfig LLMConfig `json:"llmConfig"`
 	Result    string    `json:"result"`
 
+	// Failure contains a list of test failures, if there were unmet expectations.
+	// These do not indicate an infrastructure failure, rather they are the details of a test failure.
+	Failures []Failure `json:"failures,omitempty"`
+
 	// Error contains the error message, if there was an unexpected error during the execution of the test.
 	// This normally indicates an infrastructure failure, rather than a test failure.
 	Error string `json:"error"`
+}
+
+type Failure struct {
+	Message string `json:"message"`
 }
 
 type LLMConfig struct {
@@ -34,4 +44,13 @@ type LLMConfig struct {
 	Strategy string `json:"strategy"`
 
 	// TODO: Maybe different styles of invocation, or different temperatures etc?
+}
+
+// AddFailure is a helper for adding a formatted failure message; it also marks the test as failed
+func (r *TaskResult) AddFailure(msg string, args ...any) {
+	failure := Failure{
+		Message: fmt.Sprintf(msg, args...),
+	}
+	r.Result = "fail"
+	r.Failures = append(r.Failures, failure)
 }

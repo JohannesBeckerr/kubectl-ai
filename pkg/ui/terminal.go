@@ -19,17 +19,19 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
 	"github.com/charmbracelet/glamour"
 	"k8s.io/klog/v2"
 )
 
 type TerminalUI struct {
+	journal          journal.Recorder
 	markdownRenderer *glamour.TermRenderer
 }
 
 var _ UI = &TerminalUI{}
 
-func NewTerminalUI() (*TerminalUI, error) {
+func NewTerminalUI(journal journal.Recorder) (*TerminalUI, error) {
 	mdRenderer, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithPreservedNewLines(),
@@ -38,11 +40,18 @@ func NewTerminalUI() (*TerminalUI, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error initializing the markdown renderer: %w", err)
 	}
-	return &TerminalUI{markdownRenderer: mdRenderer}, nil
+	return &TerminalUI{markdownRenderer: mdRenderer, journal: journal}, nil
 }
 
 func (u *TerminalUI) RenderOutput(ctx context.Context, s string, styleOptions ...StyleOption) {
 	log := klog.FromContext(ctx)
+
+	u.journal.Write(ctx, &journal.Event{
+		Action: journal.ActionUIRender,
+		Payload: map[string]any{
+			"text": s,
+		},
+	})
 
 	computedStyle := &style{}
 	for _, opt := range styleOptions {
