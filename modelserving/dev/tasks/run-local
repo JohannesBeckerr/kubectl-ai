@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SRC_DIR=${REPO_ROOT}/modelserving
+cd "${SRC_DIR}"
+
+# Default model
+export LLAMA_ARG_MODEL=$(pwd)/.build/gemma-3-12b-it-Q4_K_M.gguf
+
+# Bigger context size (though not too large given memory)
+export LLAMA_ARG_CTX_SIZE=16384
+
+# Build and export the docker image
+mkdir -p .build/llamacpp-server
+docker buildx build -f images/llamacpp-server/Dockerfile -t llamacpp-server:latest --progress=plain --output type=local,dest=.build/llamacpp-server .
+
+.build/llamacpp-server/llama-server --jinja -fa
