@@ -215,11 +215,6 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("setting model: %w", err)
 	}
 
-	u, err := ui.NewTerminalUI()
-	if err != nil {
-		return err
-	}
-
 	var recorder journal.Recorder
 	if *tracePath != "" {
 		fileRecorder, err := journal.NewFileRecorder(*tracePath)
@@ -232,6 +227,11 @@ func run(ctx context.Context) error {
 		// Ensure we always have a recorder, to avoid nil checks
 		recorder = &journal.LogRecorder{}
 		defer recorder.Close()
+	}
+
+	u, err := ui.NewTerminalUI(recorder)
+	if err != nil {
+		return err
 	}
 
 	var strategy llmstrategy.Strategy

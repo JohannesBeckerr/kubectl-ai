@@ -55,6 +55,10 @@ func (r *FileRecorder) Close() error {
 }
 
 func (r *FileRecorder) Write(ctx context.Context, event *Event) error {
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+
 	yamlBytes, err := yaml.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("marshalling event: %w", err)
@@ -72,22 +76,25 @@ type Event struct {
 	Payload   any       `json:"payload,omitempty"`
 }
 
-// WriteToFile appends the given content to a file.
-// If the file does not exist, it is created.
-// Returns an error if any operation fails.
-func WriteToFile(fileName string, content string) error {
-	// Open the file in append mode, create if it doesn't exist
-	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer file.Close() // Ensure the file is closed after the function exits
+// ActionUIRender is for an event that indicates we wrote output to the UI
+const ActionUIRender = "ui.render"
 
-	// Append the content to the file
-	_, err = file.WriteString(content)
-	if err != nil {
-		return err
+// GetString is a helper to get a string value from the Payload
+func (e *Event) GetString(key string) (string, bool) {
+	if e.Payload == nil {
+		return "", false
 	}
-
-	return nil
+	m, ok := e.Payload.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	v, ok := m[key]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	return s, true
 }

@@ -24,10 +24,15 @@ import (
 	"strings"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/k8s-bench/pkg/model"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
 	"sigs.k8s.io/yaml"
 )
 
 func runEvaluation(ctx context.Context, config EvalConfig) error {
+	if config.OutputDir == "" {
+		return fmt.Errorf("must set OutputDir")
+	}
+
 	tasks, err := loadTasks(config)
 	if err != nil {
 		return fmt.Errorf("failed to load tasks: %w", err)
@@ -128,20 +133,37 @@ func loadTasks(config EvalConfig) (map[string]Task, error) {
 }
 
 func evaluateTask(ctx context.Context, config EvalConfig, taskID string, task Task, llmConfig model.LLMConfig, log io.Writer) model.TaskResult {
+
 	result := model.TaskResult{
 		Task:      taskID,
 		LLMConfig: llmConfig,
 	}
 
+	taskDir := filepath.Join(config.TasksDir, taskID)
+	taskDirAbs, err := filepath.Abs(taskDir)
+	if err != nil {
+		result.Result = "fail"
+		result.Error = err.Error()
+		return result
+	}
+	taskDir = taskDirAbs
+
 	// Run setup if specified
 	if task.Setup != "" {
-		setupPath := filepath.Join(config.TasksDir, taskID, task.Setup)
-		if err := runScript(ctx, setupPath, config.KubeConfig, log); err != nil {
+		setupPath := filepath.Join(taskDir, task.Setup)
+		cmd := exec.CommandContext(ctx, setupPath)
+		cmd.Dir = taskDir
+		cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", config.KubeConfig))
+
+		if err := runCommand(cmd, log); err != nil {
 			// Unexpected error
 			result.Error = err.Error()
 			return result
 		}
 	}
+
+	taskOutputDir := filepath.Join(config.OutputDir, taskID, llmConfig.ID)
+	tracePath := filepath.Join(taskOutputDir, "trace.yaml")
 
 	// Run the agent
 	{
@@ -150,11 +172,7 @@ func evaluateTask(ctx context.Context, config EvalConfig, taskID string, task Ta
 			"--llm-provider", llmConfig.ProviderID,
 			"--strategy", llmConfig.Strategy,
 			"--model", llmConfig.ModelID,
-		}
-
-		if config.OutputDir != "" {
-			taskOutputDir := filepath.Join(config.OutputDir, taskID, llmConfig.ID)
-			args = append(args, "--trace-path", filepath.Join(taskOutputDir, "trace.yaml"))
+			"--trace-path", tracePath,
 		}
 
 		args = append(args, task.Goal)
@@ -165,7 +183,6 @@ func evaluateTask(ctx context.Context, config EvalConfig, taskID string, task Ta
 		)
 
 		cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", config.KubeConfig))
-		fmt.Printf("\nRunning %s for task %s with %+v\n", config.AgentBin, taskID, llmConfig)
 
 		if err := runCommand(cmd, log); err != nil {
 			result.Result = "fail"
@@ -176,7 +193,7 @@ func evaluateTask(ctx context.Context, config EvalConfig, taskID string, task Ta
 
 	// Run verifier if specified
 	if task.Verifier != "" {
-		verifierPath := filepath.Join(config.TasksDir, taskID, task.Verifier)
+		verifierPath := filepath.Join(taskDir, task.Verifier)
 		cmd := exec.CommandContext(ctx, verifierPath)
 		cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", config.KubeConfig))
 		fmt.Printf("\nRunning verifier for task %s\n", taskID)
@@ -193,10 +210,47 @@ func evaluateTask(ctx context.Context, config EvalConfig, taskID string, task Ta
 		}
 	}
 
+	// Run expectations if specified
+	if len(task.Expect) != 0 {
+		events, err := journal.ParseEventsFromFile(tracePath)
+		if err != nil {
+			// Unexpected error
+			result.Error = err.Error()
+			return result
+		} else {
+			var lastEvent *journal.Event
+			for _, event := range events {
+				if event.Action == journal.ActionUIRender {
+					lastEvent = event
+				}
+			}
+
+			if lastEvent == nil {
+				result.AddFailure("did not found ui.render event in trace")
+			} else {
+				lastOutput, ok := lastEvent.GetString("text")
+				if !ok {
+					result.AddFailure("did not found 'text' key in event %+v", lastEvent)
+				}
+				for _, expect := range task.Expect {
+					if expect.Contains != "" {
+						if !strings.Contains(lastOutput, expect.Contains) {
+							result.AddFailure("expected value %q not found in output %q", expect.Contains, lastOutput)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Run cleanup if specified
 	if task.Cleanup != "" {
-		cleanupPath := filepath.Join(config.TasksDir, taskID, task.Cleanup)
-		if err := runScript(ctx, cleanupPath, config.KubeConfig, log); err != nil {
+		cleanupPath := filepath.Join(taskDir, task.Cleanup)
+		cmd := exec.CommandContext(ctx, cleanupPath)
+		cmd.Dir = taskDir
+		cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", config.KubeConfig))
+
+		if err := runCommand(cmd, log); err != nil {
 			fmt.Printf("Warning: cleanup failed for task %s: %v\n", taskID, err)
 		}
 	}
@@ -204,14 +258,8 @@ func evaluateTask(ctx context.Context, config EvalConfig, taskID string, task Ta
 	return result
 }
 
-func runScript(ctx context.Context, path string, kubeconfig string, log io.Writer) error {
-	cmd := exec.CommandContext(ctx, path)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfig))
-	fmt.Printf("\nRunning script: %s\n", path)
-	return runCommand(cmd, log)
-}
-
 func runCommand(cmd *exec.Cmd, log io.Writer) error {
+	fmt.Printf("\nRunning command: %s\n", strings.Join(cmd.Args, " "))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if log != nil {

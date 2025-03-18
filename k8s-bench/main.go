@@ -36,6 +36,12 @@ type Task struct {
 	Cleanup    string `json:"cleanup,omitempty"`
 	Difficulty string `json:"difficulty"`
 	Disabled   bool   `json:"disabled,omitempty"`
+
+	Expect []Expectation `json:"expect,omitempty"`
+}
+
+type Expectation struct {
+	Contains string `json:"contains,omitempty"`
 }
 
 type EvalConfig struct {
