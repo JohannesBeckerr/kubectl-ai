@@ -28,8 +28,9 @@ import (
 )
 
 type LlamaCppClient struct {
-	baseURL    *url.URL
-	httpClient *http.Client
+	baseURL        *url.URL
+	httpClient     *http.Client
+	responseSchema *llamacppSchema
 }
 
 type LlamaCppChat struct {
@@ -70,7 +71,8 @@ func (c *LlamaCppClient) SetModel(model string) error {
 
 func (c *LlamaCppClient) GenerateCompletion(ctx context.Context, request *CompletionRequest) (CompletionResponse, error) {
 	llamacppRequest := &llamacppCompletionRequest{
-		Prompt: request.Prompt,
+		Prompt:     request.Prompt,
+		JSONSchema: c.responseSchema,
 	}
 
 	llamacppResponse, err := c.doCompletion(ctx, llamacppRequest)
@@ -141,7 +143,9 @@ func (c *LlamaCppClient) ListModels(ctx context.Context) ([]string, error) {
 	return nil, fmt.Errorf("model switching not supported by llama.cpp")
 }
 
-func (c *LlamaCppClient) SetResponseSchema(schema *Schema) error {
+func (c *LlamaCppClient) SetResponseSchema(responseSchema *Schema) error {
+	llamaSchema := toLlamacppSchema(responseSchema)
+	c.responseSchema = llamaSchema
 	return nil
 }
 
@@ -396,6 +400,8 @@ type llamacppCompletionRequest struct {
 	// See https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md#post-completion-given-a-prompt-it-returns-the-predicted-completion
 
 	Prompt string `json:"prompt,omitempty"`
+
+	JSONSchema *llamacppSchema `json:"json_schema,omitempty"`
 }
 
 type llamacppCompletionResponse struct {
