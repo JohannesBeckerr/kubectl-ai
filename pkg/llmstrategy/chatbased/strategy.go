@@ -17,6 +17,7 @@ package chatbased
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"os"
@@ -199,16 +200,17 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 
 					output, err := a.executeAction(ctx, call, a.workDir)
 					if err != nil {
-						log.Error(err, "Error executing action")
+						return fmt.Errorf("executing action: %w", err)
+					}
+
+					result, err := toResult(output)
+					if err != nil {
 						return err
 					}
 
 					currChatContent = append(currChatContent, gollm.FunctionCallResult{
-						Name: functionName,
-						Result: map[string]any{
-							"command": call.Arguments["command"],
-							"output":  output,
-						},
+						Name:   functionName,
+						Result: result,
 					})
 
 				}
@@ -229,8 +231,22 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 	return fmt.Errorf("max iterations reached")
 }
 
+// toResult converts an arbitrary result to a map[string]any
+func toResult(v any) (map[string]any, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("converting result to json: %w", err)
+	}
+
+	m := make(map[string]any)
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, fmt.Errorf("converting json result to map: %w", err)
+	}
+	return m, nil
+}
+
 // executeAction handles the execution of a single action
-func (c *Conversation) executeAction(ctx context.Context, call gollm.FunctionCall, workDir string) (string, error) {
+func (c *Conversation) executeAction(ctx context.Context, call gollm.FunctionCall, workDir string) (any, error) {
 	log := klog.FromContext(ctx)
 
 	tool := c.strategy.Tools.Lookup(call.Name)
@@ -259,7 +275,7 @@ func (c *Conversation) executeAction(ctx context.Context, call gollm.FunctionCal
 		Payload:   output,
 	})
 
-	return output.(string), nil
+	return output, nil
 }
 
 // generateFromTemplate generates a prompt for LLM. It uses the prompt from the provides template file or default.
