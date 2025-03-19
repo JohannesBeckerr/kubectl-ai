@@ -206,7 +206,17 @@ func (a *Conversation) executeAction(ctx context.Context, action *Action, workDi
 	if err != nil {
 		return fmt.Sprintf("Error executing %q command: %v", action.Command, err), err
 	}
-	return output.(string), nil
+
+	switch output := output.(type) {
+	case string:
+		return output, nil
+	default:
+		b, err := json.Marshal(output)
+		if err != nil {
+			return "", fmt.Errorf("converting output to json: %w", err)
+		}
+		return string(b), nil
+	}
 }
 
 // AskLLM asks the LLM for the next action, sending a prompt including the .History
