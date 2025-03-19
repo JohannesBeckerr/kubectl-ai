@@ -262,18 +262,20 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("invalid strategy: %s", opt.Strategy)
 	}
 
+	conversation, err := strategy.NewConversation(ctx, u)
+	if err != nil {
+		return fmt.Errorf("starting conversation: %w", err)
+	}
+	defer conversation.Close()
+
 	if queryFromCmd != "" {
 		query := queryFromCmd
 
-		agent := Agent{
-			Strategy: strategy,
-		}
-		return agent.RunOnce(ctx, query, []string{}, u)
+		return conversation.RunOneRound(ctx, query)
 	}
 
 	chatSession := session{
-		Queries: []string{},
-		Model:   opt.ModelID,
+		Model: opt.ModelID,
 	}
 
 	u.RenderOutput(ctx, "Hey there, what can I help you with today?\n", ui.Foreground(ui.ColorRed))
@@ -290,7 +292,10 @@ func run(ctx context.Context) error {
 		case query == "":
 			continue
 		case query == "reset":
-			chatSession.Queries = []string{}
+			conversation, err = strategy.NewConversation(ctx, u)
+			if err != nil {
+				return err
+			}
 			u.ClearScreen()
 		case query == "clear":
 			u.ClearScreen()
@@ -314,23 +319,14 @@ func run(ctx context.Context) error {
 			_ = llmClient.SetModel(chatSession.Model)
 			u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
 		default:
-			agent := Agent{
-				Strategy: strategy,
-			}
-			if err := agent.RunOnce(ctx, query, chatSession.PreviousQueries(), u); err != nil {
+			if err := conversation.RunOneRound(ctx, query); err != nil {
 				return err
 			}
-			chatSession.Queries = append(chatSession.Queries, query)
 		}
 	}
 }
 
 // session represents each the chat session.
 type session struct {
-	Queries []string `json:"queries"`
-	Model   string   `json:"model"`
-}
-
-func (s *session) PreviousQueries() []string {
-	return s.Queries
+	Model string `json:"model"`
 }

@@ -26,6 +26,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
@@ -39,18 +40,13 @@ type Strategy struct {
 
 	// PromptTemplateFile allows specifying a custom template file
 	PromptTemplateFile string
-	PreviousQueries    []string
 
 	// Recorder captures events for diagnostics
 	Recorder journal.Recorder
 
+	MaxIterations int
+
 	RemoveWorkDir bool
-
-	Messages         []Message
-	MaxIterations    int
-	CurrentIteration int
-
-	PastQueries string
 
 	Kubeconfig          string
 	AsksForConfirmation bool
@@ -58,28 +54,73 @@ type Strategy struct {
 	Tools tools.Tools
 }
 
-func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []string, u ui.UI) error {
-	log := klog.FromContext(ctx)
-	log.Info("Executing query:", "query", query)
+type Conversation struct {
+	strategy *Strategy
+	workDir  string
 
+	// recorder captures events for diagnostics
+	recorder journal.Recorder
+
+	userInterface ui.UI
+
+	llmClient gollm.Client
+
+	MaxIterations int
+
+	previousQueries  []string
+	currentIteration int
+	messages         []Message
+}
+
+func (s *Strategy) NewConversation(ctx context.Context, userInterface ui.UI) (llmstrategy.Conversation, error) {
+	log := klog.FromContext(ctx)
+
+	// Create a temporary working directory
 	// Create a temporary working directory
 	workDir, err := os.MkdirTemp("", "agent-workdir-*")
 	if err != nil {
-		log.Error(err, "Failed to create temporary working directory")
-		return err
+		return nil, fmt.Errorf("creating temporary working directory: %w", err)
 	}
-	if a.RemoveWorkDir {
-		defer os.RemoveAll(workDir)
-	}
+
 	log.Info("Created temporary working directory", "workDir", workDir)
+
+	return &Conversation{
+		strategy:      s,
+		workDir:       workDir,
+		recorder:      s.Recorder,
+		userInterface: userInterface,
+		llmClient:     s.LLM,
+
+		MaxIterations: s.MaxIterations,
+	}, nil
+}
+
+func (c *Conversation) Close() error {
+	if c.workDir != "" {
+		if c.strategy.RemoveWorkDir {
+			if err := os.RemoveAll(c.workDir); err != nil {
+				klog.Warningf("error cleaning up directory %q: %v", c.workDir, err)
+			}
+		}
+	}
+	return nil
+}
+
+// RunOneRound executes a chat-based agentic loop with the LLM using function calling.
+func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
+	log := klog.FromContext(ctx)
+	log.Info("Executing query:", "query", query)
+
 	a.ResetHistory()
 
+	u := a.userInterface
+
 	// Main execution loop
-	for a.CurrentIteration < a.MaxIterations {
-		log.Info("Starting iteration", "iteration", a.CurrentIteration)
+	for a.currentIteration < a.MaxIterations {
+		log.Info("Starting iteration", "iteration", a.currentIteration)
 
 		// Get next action from LLM
-		reActResp, err := a.AskLLM(ctx, query)
+		reActResp, err := a.askLLM(ctx, query)
 		if err != nil {
 			log.Error(err, "Error asking LLM")
 			u.RenderOutput(ctx, fmt.Sprintf("\nSorry, Couldn't complete the task. LLM error %v\n", err), ui.Foreground(ui.ColorRed))
@@ -115,7 +156,7 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 			u.RenderOutput(ctx, fmt.Sprintf("  Running: %s", reActResp.Action.Command), ui.Foreground(ui.ColorGreen))
 			u.RenderOutput(ctx, reActResp.Action.Reason, ui.RenderMarkdown())
 
-			if a.AsksForConfirmation && reActResp.Action.ModifiesResource == "yes" {
+			if a.strategy.AsksForConfirmation && reActResp.Action.ModifiesResource == "yes" {
 				confirm := u.AskForConfirmation(ctx, "  Are you sure you want to run this command (Y/n)?")
 				if !confirm {
 					u.RenderOutput(ctx, "Sure.\n", ui.RenderMarkdown())
@@ -124,7 +165,7 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 			}
 
 			// Execute action
-			output, err := a.executeAction(ctx, reActResp.Action, workDir)
+			output, err := a.executeAction(ctx, reActResp.Action, a.workDir)
 			if err != nil {
 				log.Error(err, "Error executing action")
 				return err
@@ -135,27 +176,27 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 			a.addMessage(ctx, "user", observation)
 		}
 
-		a.CurrentIteration++
+		a.currentIteration++
 	}
 
 	// Handle max iterations reached
-	log.Info("Max iterations reached", "iterations", a.CurrentIteration)
+	log.Info("Max iterations reached", "iterations", a.currentIteration)
 	u.RenderOutput(ctx, fmt.Sprintf("\nSorry, Couldn't complete the task after %d attempts.\n", a.MaxIterations), ui.Foreground(ui.ColorRed))
 	return a.recordError(ctx, fmt.Errorf("max iterations reached"))
 }
 
 // executeAction handles the execution of a single action
-func (a *Strategy) executeAction(ctx context.Context, action *Action, workDir string) (string, error) {
+func (a *Conversation) executeAction(ctx context.Context, action *Action, workDir string) (string, error) {
 	log := klog.FromContext(ctx)
 
-	tool := a.Tools.Lookup(action.Name)
+	tool := a.strategy.Tools.Lookup(action.Name)
 	if tool == nil {
 		a.addMessage(ctx, "system", fmt.Sprintf("Error: Tool %s not found", action.Name))
 		log.Info("Unknown action: ", "action", action.Name)
 		return "", fmt.Errorf("unknown action: %s", action.Name)
 	}
 
-	ctx = context.WithValue(ctx, "kubeconfig", a.Kubeconfig)
+	ctx = context.WithValue(ctx, "kubeconfig", a.strategy.Kubeconfig)
 	ctx = context.WithValue(ctx, "work_dir", workDir)
 
 	output, err := tool.Run(ctx, map[string]any{
@@ -169,33 +210,34 @@ func (a *Strategy) executeAction(ctx context.Context, action *Action, workDir st
 }
 
 // AskLLM asks the LLM for the next action, sending a prompt including the .History
-func (a *Strategy) AskLLM(ctx context.Context, query string) (*ReActResponse, error) {
+func (a *Conversation) askLLM(ctx context.Context, query string) (*ReActResponse, error) {
 	log := klog.FromContext(ctx)
 	log.Info("Asking LLM...")
 
 	data := PromptData{
 		Query:           query,
-		PreviousQueries: a.PreviousQueries,
-		History:         a.Messages,
-		Tools:           strings.Join(a.Tools.Names(), ", "),
+		PreviousQueries: a.previousQueries,
+		History:         a.messages,
+		Tools:           strings.Join(a.strategy.Tools.Names(), ", "),
 	}
 
-	prompt, err := a.generatePrompt(ctx, defaultReActPromptTemplate, data)
+	prompt, err := a.strategy.generatePrompt(ctx, defaultReActPromptTemplate, data)
 	if err != nil {
-		log.Error(err, "generating from template")
-		return nil, err
+		return nil, fmt.Errorf("generating prompt: %w", err)
 	}
 
 	log.Info("Thinking...", "prompt", prompt)
 
-	response, err := a.LLM.GenerateCompletion(ctx, &gollm.CompletionRequest{
+	response, err := a.llmClient.GenerateCompletion(ctx, &gollm.CompletionRequest{
 		Prompt: prompt,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("generating LLM completion: %w", err)
 	}
 
-	a.Recorder.Write(ctx, &journal.Event{
+	a.previousQueries = append(a.previousQueries, query)
+
+	a.recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "llm-response",
 		Payload:   response,
@@ -212,7 +254,7 @@ func sanitizeToolInput(input string) string {
 	return strings.TrimSpace(input)
 }
 
-func (a *Strategy) addMessage(ctx context.Context, role, content string) error {
+func (a *Conversation) addMessage(ctx context.Context, role, content string) error {
 	log := klog.FromContext(ctx)
 	log.Info("Tracing...")
 
@@ -220,8 +262,8 @@ func (a *Strategy) addMessage(ctx context.Context, role, content string) error {
 		Role:    role,
 		Content: content,
 	}
-	a.Messages = append(a.Messages, msg)
-	a.Recorder.Write(ctx, &journal.Event{
+	a.messages = append(a.messages, msg)
+	a.recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "trace",
 		Payload:   msg,
@@ -230,24 +272,24 @@ func (a *Strategy) addMessage(ctx context.Context, role, content string) error {
 	return nil
 }
 
-func (a *Strategy) recordError(ctx context.Context, err error) error {
-	return a.Recorder.Write(ctx, &journal.Event{
+func (a *Conversation) recordError(ctx context.Context, err error) error {
+	return a.recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "error",
 		Payload:   err.Error(),
 	})
 }
 
-func (a *Strategy) HistoryAsJSON() string {
-	json, err := json.MarshalIndent(a.Messages, "", "  ")
+func (a *Conversation) HistoryAsJSON() string {
+	json, err := json.MarshalIndent(a.messages, "", "  ")
 	if err != nil {
 		return ""
 	}
 	return string(json)
 }
 
-func (a *Strategy) ResetHistory() {
-	a.Messages = []Message{}
+func (a *Conversation) ResetHistory() {
+	a.messages = []Message{}
 }
 
 type ReActResponse struct {
@@ -294,9 +336,6 @@ func (a *PromptData) HistoryAsJSON() string {
 
 // generateFromTemplate generates a prompt for LLM. It uses the prompt from the provides template file or default.
 func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate string, data PromptData) (string, error) {
-	var tmpl *template.Template
-	var err error
-
 	promptTemplate := defaultPromptTemplate
 	if a.PromptTemplateFile != "" {
 		content, err := os.ReadFile(a.PromptTemplateFile)
@@ -306,15 +345,15 @@ func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate strin
 		promptTemplate = string(content)
 	}
 
-	tmpl, err = template.New("promptTemplate").Parse(promptTemplate)
+	tmpl, err := template.New("promptTemplate").Parse(promptTemplate)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("building template for prompt: %w", err)
 	}
 
 	var result strings.Builder
 	err = tmpl.Execute(&result, &data)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("evaluating template for prompt: %w", err)
 	}
 	return result.String(), nil
 }
