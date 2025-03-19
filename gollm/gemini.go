@@ -267,7 +267,7 @@ func toGeminiSchema(schema *Schema) (*genai.Schema, error) {
 // It returns a ChatResponse object containing the response from the model.
 func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, error) {
 	log := klog.FromContext(ctx)
-	log.Info("sending LLM request", "user", contents)
+	log.V(1).Info("sending LLM request", "user", contents)
 
 	var geminiParts []genai.Part
 	for _, content := range contents {
@@ -287,6 +287,7 @@ func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, e
 	if err != nil {
 		return nil, err
 	}
+	log.V(1).Info("got LLM response", "response", geminiResponse)
 	return &GeminiChatResponse{geminiResponse: geminiResponse}, nil
 }
 
