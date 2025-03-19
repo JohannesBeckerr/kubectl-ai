@@ -97,7 +97,7 @@ func (t *Kubectl) Run(ctx context.Context, args map[string]any) (any, error) {
 		WorkDir:    ctx.Value("work_dir").(string),
 		Command:    args["command"].(string),
 	}
-	return kubectlRunner(kubectlArgs.Command, kubectlArgs.Kubeconfig, kubectlArgs.WorkDir)
+	return runKubectlCommand(kubectlArgs.Command, kubectlArgs.Kubeconfig, kubectlArgs.WorkDir)
 }
 
 type KubectlArgs struct {
@@ -106,8 +106,8 @@ type KubectlArgs struct {
 	Command    string `json:"command"`
 }
 
-// kubectlRunner executes a kubectl command with the specified kubeconfig and returns the output.
-func kubectlRunner(command string, kubeconfig string, workDir string) (string, error) {
+// runKubectlCommand executes a kubectl command with the specified kubeconfig and returns the output.
+func runKubectlCommand(command string, kubeconfig string, workDir string) (string, error) {
 	if strings.Contains(command, "kubectl edit") {
 		return "interactive mode not supported for kubectl, please use non-interactive commands", nil
 	}
@@ -189,11 +189,11 @@ func (t *BashTool) Run(ctx context.Context, args map[string]any) (any, error) {
 	kubeconfig := ctx.Value("kubeconfig").(string)
 	workDir := ctx.Value("work_dir").(string)
 	command := args["command"].(string)
-	return bashRunner(command, kubeconfig, workDir)
+	return runBashCmd(command, kubeconfig, workDir)
 }
 
-// bashRunner executes a bash command and returns the output
-func bashRunner(command string, kubeconfig string, workDir string) (string, error) {
+// runBashCmd executes a bash command and returns the output
+func runBashCmd(command string, kubeconfig string, workDir string) (string, error) {
 	if strings.Contains(command, "kubectl edit") {
 		return "interactive mode not supported for kubectl, please use non-interactive commands", nil
 	}
