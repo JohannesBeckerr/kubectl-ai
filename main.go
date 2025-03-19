@@ -36,6 +36,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/yaml"
 )
 
 // models
@@ -62,12 +63,13 @@ func main() {
 }
 
 type Options struct {
-	Strategy   string
-	ProviderID string
-	ModelID    string
+	Strategy   string `json:"strategy,omitempty"`
+	ProviderID string `json:"llmProvider,omitempty"`
+	ModelID    string `json:"model,omitempty"`
+
 	// AsksForConfirmation is a flag to ask for confirmation before executing kubectl commands
 	// that modifies resources in the cluster.
-	AsksForConfirmation bool
+	AsksForConfirmation bool `json:"askForConfirmation,omitempty"`
 
 	MCPServer bool
 }
@@ -82,10 +84,37 @@ func (o *Options) InitDefaults() {
 	o.MCPServer = false
 }
 
+func (o *Options) LoadConfiguration(b []byte) error {
+	if err := yaml.Unmarshal(b, &o); err != nil {
+		return fmt.Errorf("parsing configuration: %w", err)
+	}
+	return nil
+}
+
 func run(ctx context.Context) error {
 	// Command line flags
 	var opt Options
 	opt.InitDefaults()
+
+	{
+		// Try to load configuration
+		configDir, err := os.UserConfigDir()
+		if err != nil {
+			return fmt.Errorf("getting user config directory: %w", err)
+		}
+		configPath := filepath.Join(configDir, "kubectl-ai", "config.yaml")
+		configBytes, err := os.ReadFile(configPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// ignore
+			} else {
+				fmt.Fprintf(os.Stderr, "warning: could not load defaults from %q: %v\n", configPath, err)
+			}
+		}
+		if err := opt.LoadConfiguration(configBytes); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: error loading configuration from %q: %v\n", configPath, err)
+		}
+	}
 
 	maxIterations := flag.Int("max-iterations", 20, "maximum number of iterations agent will try before giving up")
 	kubeconfig := flag.String("kubeconfig", "", "path to the kubeconfig file")
