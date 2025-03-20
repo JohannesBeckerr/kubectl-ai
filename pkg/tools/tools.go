@@ -30,7 +30,9 @@ func (t Tools) Names() []string {
 	return names
 }
 
-var allTools Tools = Tools{
-	"kubectl": &Kubectl{},
-	"bash":    &BashTool{},
+var allTools Tools = Tools{}
+
+// RegisterTool makes a tool available to the LLM.
+func RegisterTool(tool Tool) {
+	allTools[tool.Name()] = tool
 }
