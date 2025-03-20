@@ -141,19 +141,25 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 
 		// Handle action
 		if reActResp.Action != nil {
-			log.Info("Executing action",
-				"name", reActResp.Action.Name,
-				"reason", reActResp.Action.Reason,
-				"command", reActResp.Action.Command,
-				"modifies_resource", reActResp.Action.ModifiesResource,
-			)
-
 			// Sanitize and prepare action
 			reActResp.Action.Command = sanitizeToolInput(reActResp.Action.Command)
 			a.addMessage(ctx, "user", fmt.Sprintf("Action: %q", reActResp.Action.Command))
 
+			functionCallName := reActResp.Action.Name
+			functionCallArgs, err := toMap(reActResp.Action)
+			if err != nil {
+				return err
+			}
+			delete(functionCallArgs, "name") // passed separately
+
+			toolCall, err := a.strategy.Tools.ParseToolInvocation(ctx, functionCallName, functionCallArgs)
+			if err != nil {
+				return fmt.Errorf("building tool call: %w", err)
+			}
+
 			// Display action details
-			u.RenderOutput(ctx, fmt.Sprintf("  Running: %s", reActResp.Action.Command), ui.Foreground(ui.ColorGreen))
+			s := toolCall.PrettyPrint()
+			u.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", s), ui.Foreground(ui.ColorGreen))
 			u.RenderOutput(ctx, reActResp.Action.Reason, ui.RenderMarkdown())
 
 			if a.strategy.AsksForConfirmation && reActResp.Action.ModifiesResource == "yes" {
@@ -165,7 +171,7 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 			}
 
 			// Execute action
-			output, err := a.executeAction(ctx, reActResp.Action, a.workDir)
+			output, err := a.executeAction(ctx, toolCall, a.workDir)
 			if err != nil {
 				log.Error(err, "Error executing action")
 				return err
@@ -185,28 +191,41 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 	return a.recordError(ctx, fmt.Errorf("max iterations reached"))
 }
 
-// executeAction handles the execution of a single action
-func (a *Conversation) executeAction(ctx context.Context, action *Action, workDir string) (string, error) {
-	log := klog.FromContext(ctx)
-
-	tool := a.strategy.Tools.Lookup(action.Name)
-	if tool == nil {
-		a.addMessage(ctx, "system", fmt.Sprintf("Error: Tool %s not found", action.Name))
-		log.Info("Unknown action: ", "action", action.Name)
-		return "", fmt.Errorf("unknown action: %s", action.Name)
+// toMap converts the value to a map, going via JSON
+func toMap(v any) (map[string]any, error) {
+	j, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("converting %T to json: %w", v, err)
 	}
+	m := make(map[string]any)
+	if err := json.Unmarshal(j, &m); err != nil {
+		return nil, fmt.Errorf("converting json to map: %w", err)
+	}
+	return m, nil
+}
 
-	ctx = context.WithValue(ctx, "kubeconfig", a.strategy.Kubeconfig)
-	ctx = context.WithValue(ctx, "work_dir", workDir)
+// executeAction handles the execution of a single action
+func (a *Conversation) executeAction(ctx context.Context, tool *tools.ToolCall, workDir string) (string, error) {
+	ctx = journal.ContextWithRecorder(ctx, a.recorder)
 
-	output, err := tool.Run(ctx, map[string]any{
-		"command":           action.Command,
-		"modifies_resource": action.ModifiesResource,
+	output, err := tool.InvokeTool(ctx, tools.InvokeToolOptions{
+		WorkDir: a.workDir,
 	})
 	if err != nil {
-		return fmt.Sprintf("Error executing %q command: %v", action.Command, err), err
+		a.addMessage(ctx, "system", fmt.Sprintf("Error: %v", err))
+		return "", err
 	}
-	return output.(string), nil
+
+	switch output := output.(type) {
+	case string:
+		return output, nil
+	default:
+		b, err := json.Marshal(output)
+		if err != nil {
+			return "", fmt.Errorf("converting output to json: %w", err)
+		}
+		return string(b), nil
+	}
 }
 
 // AskLLM asks the LLM for the next action, sending a prompt including the .History

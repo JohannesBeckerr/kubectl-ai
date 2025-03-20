@@ -21,14 +21,18 @@ import (
 )
 
 type Tool interface {
+	// Name is the identifier for the tool; we pass this to the LLM.
+	// The LLM uses this name when it wants to invoke the tool.
+	// It should be meaningful and (we think) camel_case as (we think) that works better with most LLMs.
 	Name() string
+
+	// Description is an additional description that gives the LLM instructions on when to use the tool.
 	Description() string
+
+	// FunctionDefinition provides the full schema for the parameters to be used when invoking the tool.
+	// The Description fields provides hints that the LLM may use to use the tool more effectively/correctly.
 	FunctionDefinition() *gollm.FunctionDefinition
+
+	// Run invokes the tool, the agent calls this when the LLM requests tool invocation.
 	Run(ctx context.Context, args map[string]any) (any, error)
-}
-
-type Tools map[string]Tool
-
-func (t Tools) Lookup(name string) Tool {
-	return t[name]
 }

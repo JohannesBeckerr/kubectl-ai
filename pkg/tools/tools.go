@@ -17,204 +17,141 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
+	"maps"
+	"slices"
+	"sort"
 	"strings"
+	"time"
 
-	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"github.com/google/uuid"
 )
 
-func All() Tools {
+func Lookup(name string) Tool {
+	return allTools.Lookup(name)
+}
+
+var allTools Tools = Tools{
+	tools: make(map[string]Tool),
+}
+
+func Default() Tools {
 	return allTools
 }
 
-func Lookup(name string) Tool {
-	return allTools[name]
+// RegisterTool makes a tool available to the LLM.
+func RegisterTool(tool Tool) {
+	allTools.RegisterTool(tool)
 }
 
-func (t Tools) Names() []string {
-	names := make([]string, 0, len(t))
-	for name := range t {
+type Tools struct {
+	tools map[string]Tool
+}
+
+func (t *Tools) Lookup(name string) Tool {
+	return t.tools[name]
+}
+
+func (t *Tools) AllTools() []Tool {
+	return slices.Collect(maps.Values(t.tools))
+}
+
+func (t *Tools) Names() []string {
+	names := make([]string, 0, len(t.tools))
+	for name := range t.tools {
 		names = append(names, name)
 	}
 	return names
 }
 
-var allTools Tools = Tools{
-	"kubectl": &Kubectl{},
-	"bash":    &BashTool{},
+func (t *Tools) RegisterTool(tool Tool) {
+	if _, exists := t.tools[tool.Name()]; exists {
+		panic("tool already registered: " + tool.Name())
+	}
+	t.tools[tool.Name()] = tool
 }
 
-const (
-	bashBin = "/bin/bash"
-)
-
-type Kubectl struct{}
-
-func (t *Kubectl) Name() string {
-	return "kubectl"
+type ToolCall struct {
+	tool      Tool
+	name      string
+	arguments map[string]any
 }
 
-func (t *Kubectl) Description() string {
-	return "Executes a kubectl command against user's Kubernetes cluster. Use this tool only when you need to query or modify the state of user's Kubernetes cluster."
+func (t *ToolCall) PrettyPrint() string {
+	var args []string
+	for k, v := range t.arguments {
+		args = append(args, fmt.Sprintf("%s=%v", k, v))
+	}
+	sort.Strings(args)
+	return fmt.Sprintf("%s(%s)", t.name, strings.Join(args, ", "))
 }
 
-func (t *Kubectl) FunctionDefinition() *gollm.FunctionDefinition {
-	return &gollm.FunctionDefinition{
-		Name:        t.Name(),
-		Description: t.Description(),
-		Parameters: &gollm.Schema{
-			Type: gollm.TypeObject,
-			Properties: map[string]*gollm.Schema{
-				"command": {
-					Type: gollm.TypeString,
-					Description: `The complete kubectl command to execute. Please including the kubectl prefix as well.
-Example:
-user: what pods are running in the cluster?
-assistant: kubectl get pods
+// ParseToolInvocation parses a request from the LLM into a tool call.
+func (t *Tools) ParseToolInvocation(ctx context.Context, name string, arguments map[string]any) (*ToolCall, error) {
+	tool := t.Lookup(name)
+	if tool == nil {
+		return nil, fmt.Errorf("tool %q not recognized", name)
+	}
 
-user: what is the status of the pod my-pod?
-assistant: kubectl get pod my-pod -o jsonpath='{.status.phase}'
-`,
-				},
-				"modifies_resource": {
-					Type: gollm.TypeString,
-					Description: `Whether the command modifies a kubernetes resource.
-Possible values:
-- "yes" if the command modifies a resource
-- "no" if the command does not modify a resource
-- "unknown" if the command's effect on the resource is unknown
-`,
-				},
-			},
+	return &ToolCall{
+		tool:      tool,
+		name:      name,
+		arguments: arguments,
+	}, nil
+}
+
+type InvokeToolOptions struct {
+	WorkDir string
+
+	Kubeconfig string
+}
+
+type ToolRequestEvent struct {
+	CallID    string         `json:"id,omitempty"`
+	Name      string         `json:"name,omitempty"`
+	Arguments map[string]any `json:"arguments,omitempty"`
+}
+
+type ToolResponseEvent struct {
+	CallID   string `json:"id,omitempty"`
+	Response any    `json:"response,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+// InvokeTool handles the execution of a single action
+func (t *ToolCall) InvokeTool(ctx context.Context, opt InvokeToolOptions) (any, error) {
+	recorder := journal.RecorderFromContext(ctx)
+
+	callID := uuid.NewString()
+	recorder.Write(ctx, &journal.Event{
+		Timestamp: time.Now(),
+		Action:    "tool-request",
+		Payload: ToolRequestEvent{
+			CallID:    callID,
+			Name:      t.name,
+			Arguments: t.arguments,
 		},
-	}
-}
+	})
 
-func (t *Kubectl) Run(ctx context.Context, args map[string]any) (any, error) {
-	kubectlArgs := KubectlArgs{
-		Kubeconfig: ctx.Value("kubeconfig").(string),
-		WorkDir:    ctx.Value("work_dir").(string),
-		Command:    args["command"].(string),
-	}
-	return runKubectlCommand(kubectlArgs.Command, kubectlArgs.Kubeconfig, kubectlArgs.WorkDir)
-}
+	ctx = context.WithValue(ctx, "kubeconfig", opt.Kubeconfig)
+	ctx = context.WithValue(ctx, "work_dir", opt.WorkDir)
 
-type KubectlArgs struct {
-	Kubeconfig string `json:"kubeconfig"`
-	WorkDir    string `json:"work_dir"`
-	Command    string `json:"command"`
-}
+	response, err := t.tool.Run(ctx, t.arguments)
 
-// runKubectlCommand executes a kubectl command with the specified kubeconfig and returns the output.
-func runKubectlCommand(command string, kubeconfig string, workDir string) (string, error) {
-	if strings.Contains(command, "kubectl edit") {
-		return "interactive mode not supported for kubectl, please use non-interactive commands", nil
-	}
-	if strings.Contains(command, "kubectl port-forward") {
-		return "port-forwarding is not allowed because assistant is running in an unattended mode, please try some other alternative", nil
-	}
-
-	cmd := exec.Command(bashBin, "-c", command)
-	cmd.Env = os.Environ()
-	cmd.Dir = workDir
-
-	if kubeconfig != "" {
-		kubeconfig, err := expandShellVar(kubeconfig)
+	{
+		ev := ToolResponseEvent{
+			CallID:   callID,
+			Response: response,
+		}
 		if err != nil {
-			return "", err
+			ev.Error = err.Error()
 		}
-		cmd.Env = append(cmd.Env, "KUBECONFIG="+kubeconfig)
+		recorder.Write(ctx, &journal.Event{
+			Timestamp: time.Now(),
+			Action:    "tool-response",
+			Payload:   ev,
+		})
 	}
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		if strings.Contains(string(output), "command not found") {
-			return "error: command not found. Note that if its a kubectl command, please specify the full command including the kubectl prefix, for example: 'kubectl get pods'", nil
-		}
-		return string(output), nil
-	}
-	return string(output), nil
-}
-
-// expandShellVar expands shell variables and syntax using bash
-func expandShellVar(value string) (string, error) {
-	if strings.Contains(value, "~") {
-		cmd := exec.Command(bashBin, "-c", fmt.Sprintf("echo %s", value))
-		output, err := cmd.Output()
-		if err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(string(output)), nil
-	}
-	return os.ExpandEnv(value), nil
-}
-
-type BashTool struct{}
-
-func (t *BashTool) Name() string {
-	return "bash"
-}
-
-func (t *BashTool) Description() string {
-	return "Executes a bash command. Use this tool only when you need to execute a bash command."
-}
-
-func (t *BashTool) FunctionDefinition() *gollm.FunctionDefinition {
-	return &gollm.FunctionDefinition{
-		Name:        t.Name(),
-		Description: t.Description(),
-		Parameters: &gollm.Schema{
-			Type: gollm.TypeObject,
-			Properties: map[string]*gollm.Schema{
-				"command": {
-					Type:        gollm.TypeString,
-					Description: `The bash command to execute.`,
-				},
-				"modifies_resource": {
-					Type: gollm.TypeString,
-					Description: `Whether the command modifies a kubernetes resource.
-Possible values:
-- "yes" if the command modifies a resource
-- "no" if the command does not modify a resource
-- "unknown" if the command's effect on the resource is unknown
-`,
-				},
-			},
-		},
-	}
-}
-
-func (t *BashTool) Run(ctx context.Context, args map[string]any) (any, error) {
-	kubeconfig := ctx.Value("kubeconfig").(string)
-	workDir := ctx.Value("work_dir").(string)
-	command := args["command"].(string)
-	return runBashCmd(command, kubeconfig, workDir)
-}
-
-// runBashCmd executes a bash command and returns the output
-func runBashCmd(command string, kubeconfig string, workDir string) (string, error) {
-	if strings.Contains(command, "kubectl edit") {
-		return "interactive mode not supported for kubectl, please use non-interactive commands", nil
-	}
-	if strings.Contains(command, "kubectl port-forward") {
-		return "port-forwarding is not allowed because assistant is running in an unattended mode, please try some other alternative", nil
-	}
-
-	cmd := exec.Command(bashBin, "-c", command)
-	cmd.Dir = workDir
-	cmd.Env = os.Environ()
-	if kubeconfig != "" {
-		kubeconfig, err := expandShellVar(kubeconfig)
-		if err != nil {
-			return "", err
-		}
-		cmd.Env = append(cmd.Env, "KUBECONFIG="+kubeconfig)
-	}
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(output), err
-	}
-	return string(output), nil
+	return response, nil
 }

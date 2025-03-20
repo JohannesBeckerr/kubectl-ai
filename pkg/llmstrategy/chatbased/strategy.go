@@ -17,6 +17,7 @@ package chatbased
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"os"
@@ -88,7 +89,7 @@ func (s *Strategy) NewConversation(ctx context.Context, u ui.UI) (llmstrategy.Co
 	llmChat := s.LLM.StartChat(systemPrompt)
 
 	var functionDefinitions []*gollm.FunctionDefinition
-	for _, tool := range s.Tools {
+	for _, tool := range s.Tools.AllTools() {
 		functionDefinitions = append(functionDefinitions, tool.FunctionDefinition())
 	}
 	// Sort function definitions to help KV cache reuse
@@ -186,9 +187,13 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 				// TODO(droot): Run all function calls in parallel
 				// (may have to specify in the prompt to make these function calls independent)
 				for _, call := range calls {
-					functionName := call.Name
-					log.Info("function call", "functionName", functionName, "command", call.Arguments["command"], "modifies_resource", call.Arguments["modifies_resource"])
-					a.UI.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", call.Arguments["command"]), ui.Foreground(ui.ColorGreen))
+					toolCall, err := a.strategy.Tools.ParseToolInvocation(ctx, call.Name, call.Arguments)
+					if err != nil {
+						return fmt.Errorf("building tool call: %w", err)
+					}
+
+					s := toolCall.PrettyPrint()
+					a.UI.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", s), ui.Foreground(ui.ColorGreen))
 					if a.strategy.AsksForConfirmation && call.Arguments["modifies_resource"] == "no" {
 						confirm := a.UI.AskForConfirmation(ctx, "  Are you sure you want to run this command (Y/n)? ")
 						if !confirm {
@@ -197,18 +202,22 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 						}
 					}
 
-					output, err := a.executeAction(ctx, call, a.workDir)
+					ctx := journal.ContextWithRecorder(ctx, a.recorder)
+					output, err := toolCall.InvokeTool(ctx, tools.InvokeToolOptions{
+						WorkDir: a.workDir,
+					})
 					if err != nil {
-						log.Error(err, "Error executing action")
+						return fmt.Errorf("executing action: %w", err)
+					}
+
+					result, err := toResult(output)
+					if err != nil {
 						return err
 					}
 
 					currChatContent = append(currChatContent, gollm.FunctionCallResult{
-						Name: functionName,
-						Result: map[string]any{
-							"command": call.Arguments["command"],
-							"output":  output,
-						},
+						Name:   call.Name,
+						Result: result,
 					})
 
 				}
@@ -229,37 +238,18 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 	return fmt.Errorf("max iterations reached")
 }
 
-// executeAction handles the execution of a single action
-func (c *Conversation) executeAction(ctx context.Context, call gollm.FunctionCall, workDir string) (string, error) {
-	log := klog.FromContext(ctx)
-
-	tool := c.strategy.Tools.Lookup(call.Name)
-	if tool == nil {
-		log.Info("Unknown action: ", "action", call.Name)
-		return "", fmt.Errorf("tool %q not found", call.Name)
-	}
-
-	c.recorder.Write(ctx, &journal.Event{
-		Timestamp: time.Now(),
-		Action:    "tool-request",
-		Payload:   call.Arguments,
-	})
-
-	ctx = context.WithValue(ctx, "work_dir", workDir)
-	ctx = context.WithValue(ctx, "kubeconfig", c.strategy.Kubeconfig)
-
-	output, err := tool.Run(ctx, call.Arguments)
+// toResult converts an arbitrary result to a map[string]any
+func toResult(v any) (map[string]any, error) {
+	b, err := json.Marshal(v)
 	if err != nil {
-		return fmt.Sprintf("Error executing %q command: %v", call.Name, err), err
+		return nil, fmt.Errorf("converting result to json: %w", err)
 	}
 
-	c.recorder.Write(ctx, &journal.Event{
-		Timestamp: time.Now(),
-		Action:    "tool-response",
-		Payload:   output,
-	})
-
-	return output.(string), nil
+	m := make(map[string]any)
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, fmt.Errorf("converting json result to map: %w", err)
+	}
+	return m, nil
 }
 
 // generateFromTemplate generates a prompt for LLM. It uses the prompt from the provides template file or default.

@@ -155,7 +155,7 @@ func run(ctx context.Context) error {
 		if err := os.MkdirAll(workDir, 0755); err != nil {
 			return fmt.Errorf("error creating work directory: %w", err)
 		}
-		mcpServer, err := newKubectlMCPServer(ctx, kubeconfigPath, tools.All(), workDir)
+		mcpServer, err := newKubectlMCPServer(ctx, kubeconfigPath, tools.Default(), workDir)
 		if err != nil {
 			return fmt.Errorf("creating mcp server: %w", err)
 		}
@@ -290,7 +290,7 @@ func run(ctx context.Context) error {
 			LLM:                 llmClient,
 			MaxIterations:       *maxIterations,
 			PromptTemplateFile:  *promptTemplateFile,
-			Tools:               tools.All(),
+			Tools:               tools.Default(),
 			Recorder:            recorder,
 			RemoveWorkDir:       *removeWorkDir,
 			AsksForConfirmation: opt.AsksForConfirmation,
@@ -301,7 +301,7 @@ func run(ctx context.Context) error {
 			LLM:                 llmClient,
 			MaxIterations:       *maxIterations,
 			PromptTemplateFile:  *promptTemplateFile,
-			Tools:               tools.All(),
+			Tools:               tools.Default(),
 			Recorder:            recorder,
 			RemoveWorkDir:       *removeWorkDir,
 			AsksForConfirmation: opt.AsksForConfirmation,
@@ -402,7 +402,7 @@ func newKubectlMCPServer(ctx context.Context, kubectlConfig string, tools tools.
 		),
 		tools: tools,
 	}
-	for _, tool := range s.tools {
+	for _, tool := range s.tools.AllTools() {
 		toolDefn := tool.FunctionDefinition()
 		s.server.AddTool(mcp.NewTool(
 			toolDefn.Name,
