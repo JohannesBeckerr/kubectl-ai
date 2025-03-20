@@ -25,6 +25,10 @@ import (
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 )
 
+func init() {
+	RegisterTool(&BashTool{})
+}
+
 const (
 	bashBin = "/bin/bash"
 )

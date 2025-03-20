@@ -23,6 +23,10 @@ import (
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 )
 
+func init() {
+	RegisterTool(&Kubectl{})
+}
+
 type Kubectl struct{}
 
 func (t *Kubectl) Name() string {
