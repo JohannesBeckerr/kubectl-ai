@@ -26,6 +26,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/llmstrategy"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"k8s.io/klog/v2"
@@ -39,15 +40,13 @@ type Strategy struct {
 
 	// PromptTemplateFile allows specifying a custom template file
 	PromptTemplateFile string
-	PreviousQueries    []string
 
 	// Recorder captures events for diagnostics
 	Recorder journal.Recorder
 
 	RemoveWorkDir bool
 
-	MaxIterations    int
-	CurrentIteration int
+	MaxIterations int
 
 	Kubeconfig          string
 	AsksForConfirmation bool
@@ -55,68 +54,102 @@ type Strategy struct {
 	Tools tools.Tools
 }
 
-// ExecuteChatBased executes a chat-based agentic loop with the LLM using function calling.
-func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []string, u ui.UI) error {
-	log := klog.FromContext(ctx)
-	log.Info("Starting chat loop for query:", "query", query)
+type Conversation struct {
+	strategy *Strategy
 
-	a.PreviousQueries = previousQueries
+	// Recorder captures events for diagnostics
+	recorder journal.Recorder
+
+	UI      ui.UI
+	llmChat gollm.Chat
+
+	workDir string
+}
+
+func (s *Strategy) NewConversation(ctx context.Context, u ui.UI) (llmstrategy.Conversation, error) {
+	log := klog.FromContext(ctx)
+
 	// Create a temporary working directory
 	workDir, err := os.MkdirTemp("", "agent-workdir-*")
 	if err != nil {
 		log.Error(err, "Failed to create temporary working directory")
-		return err
+		return nil, err
 	}
-	if a.RemoveWorkDir {
-		defer os.RemoveAll(workDir)
-	}
+
 	log.Info("Created temporary working directory", "workDir", workDir)
 
-	systemPrompt, err := a.generatePrompt(ctx, defaultSystemPromptChatAgent)
+	systemPrompt, err := s.generatePrompt(ctx, defaultSystemPromptChatAgent)
 	if err != nil {
 		log.Error(err, "Failed to generate system prompt")
-		return err
+		return nil, err
 	}
 
 	// Start a new chat session
-	chat := a.LLM.StartChat(systemPrompt)
+	llmChat := s.LLM.StartChat(systemPrompt)
 
 	var functionDefinitions []*gollm.FunctionDefinition
-	for _, tool := range a.Tools {
+	for _, tool := range s.Tools {
 		functionDefinitions = append(functionDefinitions, tool.FunctionDefinition())
 	}
 	// Sort function definitions to help KV cache reuse
 	sort.Slice(functionDefinitions, func(i, j int) bool {
 		return functionDefinitions[i].Name < functionDefinitions[j].Name
 	})
-	if err := chat.SetFunctionDefinitions(functionDefinitions); err != nil {
-		log.Error(err, "Failed to set function definitions")
-		return err
+	if err := llmChat.SetFunctionDefinitions(functionDefinitions); err != nil {
+		return nil, fmt.Errorf("setting function definitions: %w", err)
 	}
+
+	return &Conversation{
+		strategy: s,
+		recorder: s.Recorder,
+		UI:       u,
+		llmChat:  llmChat,
+		workDir:  workDir,
+	}, nil
+}
+
+func (c *Conversation) Close() error {
+	if c.workDir != "" {
+		if c.strategy.RemoveWorkDir {
+			if err := os.RemoveAll(c.workDir); err != nil {
+				klog.Warningf("error cleaning up directory %q: %v", c.workDir, err)
+			}
+		}
+	}
+	return nil
+}
+
+// RunOneRound executes a chat-based agentic loop with the LLM using function calling.
+func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
+	log := klog.FromContext(ctx)
+	log.Info("Starting chat loop for query:", "query", query)
 
 	// currChatContent tracks chat content that needs to be sent
 	// to the LLM in each iteration of  the agentic loop below
 	var currChatContent []any
 
 	// Set the initial message to start the conversation
-	currChatContent = []any{fmt.Sprintf("can you help me with query: %q", query)}
+	currChatContent = []any{query} //fmt.Sprintf("can you help me with query: %q", query)}
 
-	for a.CurrentIteration < a.MaxIterations {
-		log.Info("Starting iteration", "iteration", a.CurrentIteration)
+	currentIteration := 0
+	maxIterations := a.strategy.MaxIterations
 
-		a.Recorder.Write(ctx, &journal.Event{
+	for currentIteration < maxIterations {
+		log.Info("Starting iteration", "iteration", currentIteration)
+
+		a.recorder.Write(ctx, &journal.Event{
 			Timestamp: time.Now(),
 			Action:    "llm-chat",
 			Payload:   []any{currChatContent},
 		})
 
-		response, err := chat.Send(ctx, currChatContent...)
+		response, err := a.llmChat.Send(ctx, currChatContent...)
 		if err != nil {
 			log.Error(err, "Error sending initial message")
 			return err
 		}
 
-		a.Recorder.Write(ctx, &journal.Event{
+		a.recorder.Write(ctx, &journal.Event{
 			Timestamp: time.Now(),
 			Action:    "llm-response",
 			Payload:   response,
@@ -141,7 +174,7 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 				textResponse := text
 				// If we have a text response, render it
 				if textResponse != "" {
-					u.RenderOutput(ctx, textResponse, ui.RenderMarkdown())
+					a.UI.RenderOutput(ctx, textResponse, ui.RenderMarkdown())
 				}
 			}
 
@@ -155,16 +188,16 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 				for _, call := range calls {
 					functionName := call.Name
 					log.Info("function call", "functionName", functionName, "command", call.Arguments["command"], "modifies_resource", call.Arguments["modifies_resource"])
-					u.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", call.Arguments["command"]), ui.Foreground(ui.ColorGreen))
-					if a.AsksForConfirmation && call.Arguments["modifies_resource"] == "no" {
-						confirm := u.AskForConfirmation(ctx, "  Are you sure you want to run this command (Y/n)? ")
+					a.UI.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", call.Arguments["command"]), ui.Foreground(ui.ColorGreen))
+					if a.strategy.AsksForConfirmation && call.Arguments["modifies_resource"] == "no" {
+						confirm := a.UI.AskForConfirmation(ctx, "  Are you sure you want to run this command (Y/n)? ")
 						if !confirm {
-							u.RenderOutput(ctx, "Sure.\n", ui.RenderMarkdown())
+							a.UI.RenderOutput(ctx, "Sure.\n", ui.RenderMarkdown())
 							return nil
 						}
 					}
 
-					output, err := a.executeAction(ctx, call, workDir)
+					output, err := a.executeAction(ctx, call, a.workDir)
 					if err != nil {
 						log.Error(err, "Error executing action")
 						return err
@@ -187,40 +220,40 @@ func (a *Strategy) RunOnce(ctx context.Context, query string, previousQueries []
 			return nil
 		}
 
-		a.CurrentIteration++
+		currentIteration++
 	}
 
 	// If we've reached the maximum number of iterations
-	log.Info("Max iterations reached", "iterations", a.MaxIterations)
-	u.RenderOutput(ctx, fmt.Sprintf("\nSorry, couldn't complete the task after %d iterations.\n", a.MaxIterations), ui.Foreground(ui.ColorRed))
+	log.Info("Max iterations reached", "iterations", maxIterations)
+	a.UI.RenderOutput(ctx, fmt.Sprintf("\nSorry, couldn't complete the task after %d iterations.\n", maxIterations), ui.Foreground(ui.ColorRed))
 	return fmt.Errorf("max iterations reached")
 }
 
 // executeAction handles the execution of a single action
-func (a *Strategy) executeAction(ctx context.Context, call gollm.FunctionCall, workDir string) (string, error) {
+func (c *Conversation) executeAction(ctx context.Context, call gollm.FunctionCall, workDir string) (string, error) {
 	log := klog.FromContext(ctx)
 
-	tool := a.Tools.Lookup(call.Name)
+	tool := c.strategy.Tools.Lookup(call.Name)
 	if tool == nil {
 		log.Info("Unknown action: ", "action", call.Name)
 		return "", fmt.Errorf("tool %q not found", call.Name)
 	}
 
-	a.Recorder.Write(ctx, &journal.Event{
+	c.recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "tool-request",
 		Payload:   call.Arguments,
 	})
 
 	ctx = context.WithValue(ctx, "work_dir", workDir)
-	ctx = context.WithValue(ctx, "kubeconfig", a.Kubeconfig)
+	ctx = context.WithValue(ctx, "kubeconfig", c.strategy.Kubeconfig)
 
 	output, err := tool.Run(ctx, call.Arguments)
 	if err != nil {
 		return fmt.Sprintf("Error executing %q command: %v", call.Name, err), err
 	}
 
-	a.Recorder.Write(ctx, &journal.Event{
+	c.recorder.Write(ctx, &journal.Event{
 		Timestamp: time.Now(),
 		Action:    "tool-response",
 		Payload:   output,
@@ -231,9 +264,6 @@ func (a *Strategy) executeAction(ctx context.Context, call gollm.FunctionCall, w
 
 // generateFromTemplate generates a prompt for LLM. It uses the prompt from the provides template file or default.
 func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate string) (string, error) {
-	var tmpl *template.Template
-	var err error
-
 	promptTemplate := defaultPromptTemplate
 	if a.PromptTemplateFile != "" {
 		// Read custom template file
@@ -244,9 +274,9 @@ func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate strin
 		promptTemplate = string(content)
 	}
 
-	tmpl, err = template.New("promptTemplate").Parse(promptTemplate)
+	tmpl, err := template.New("promptTemplate").Parse(promptTemplate)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("building template for prompt: %w", err)
 	}
 
 	data := map[string]string{}
@@ -256,7 +286,7 @@ func (a *Strategy) generatePrompt(_ context.Context, defaultPromptTemplate strin
 	// Execute the template, writing the output to the strings.Builder
 	err = tmpl.Execute(&result, data)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("evaluating template for prompt: %w", err)
 	}
 
 	return result.String(), nil
