@@ -19,6 +19,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -331,6 +332,11 @@ func run(ctx context.Context) error {
 		reader := bufio.NewReader(os.Stdin)
 		query, err := reader.ReadString('\n')
 		if err != nil {
+			if err == io.EOF {
+				// Use hit control-D, or was piping and we reached the end of stdin.
+				// Not a "big" problem
+				return nil
+			}
 			return fmt.Errorf("reading input: %w", err)
 		}
 		query = strings.TrimSpace(query)
