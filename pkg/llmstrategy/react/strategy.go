@@ -187,24 +187,19 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 
 // executeAction handles the execution of a single action
 func (a *Conversation) executeAction(ctx context.Context, action *Action, workDir string) (string, error) {
-	log := klog.FromContext(ctx)
+	ctx = journal.ContextWithRecorder(ctx, a.recorder)
 
-	tool := a.strategy.Tools.Lookup(action.Name)
-	if tool == nil {
-		a.addMessage(ctx, "system", fmt.Sprintf("Error: Tool %s not found", action.Name))
-		log.Info("Unknown action: ", "action", action.Name)
-		return "", fmt.Errorf("unknown action: %s", action.Name)
-	}
-
-	ctx = context.WithValue(ctx, "kubeconfig", a.strategy.Kubeconfig)
-	ctx = context.WithValue(ctx, "work_dir", workDir)
-
-	output, err := tool.Run(ctx, map[string]any{
+	arguments := map[string]any{
 		"command":           action.Command,
 		"modifies_resource": action.ModifiesResource,
+	}
+
+	output, err := a.strategy.Tools.InvokeTool(ctx, action.Name, arguments, tools.InvokeToolOptions{
+		WorkDir: a.workDir,
 	})
 	if err != nil {
-		return fmt.Sprintf("Error executing %q command: %v", action.Command, err), err
+		a.addMessage(ctx, "system", fmt.Sprintf("Error: %v", err))
+		return "", err
 	}
 
 	switch output := output.(type) {

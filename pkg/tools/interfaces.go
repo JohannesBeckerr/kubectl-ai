@@ -36,9 +36,3 @@ type Tool interface {
 	// Run invokes the tool, the agent calls this when the LLM requests tool invocation.
 	Run(ctx context.Context, args map[string]any) (any, error)
 }
-
-type Tools map[string]Tool
-
-func (t Tools) Lookup(name string) Tool {
-	return t[name]
-}
