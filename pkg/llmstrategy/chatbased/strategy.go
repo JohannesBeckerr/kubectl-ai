@@ -187,9 +187,13 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 				// TODO(droot): Run all function calls in parallel
 				// (may have to specify in the prompt to make these function calls independent)
 				for _, call := range calls {
-					functionName := call.Name
-					log.Info("function call", "functionName", functionName, "command", call.Arguments["command"], "modifies_resource", call.Arguments["modifies_resource"])
-					a.UI.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", call.Arguments["command"]), ui.Foreground(ui.ColorGreen))
+					toolCall, err := a.strategy.Tools.ParseToolInvocation(ctx, call.Name, call.Arguments)
+					if err != nil {
+						return fmt.Errorf("building tool call: %w", err)
+					}
+
+					s := toolCall.PrettyPrint()
+					a.UI.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", s), ui.Foreground(ui.ColorGreen))
 					if a.strategy.AsksForConfirmation && call.Arguments["modifies_resource"] == "no" {
 						confirm := a.UI.AskForConfirmation(ctx, "  Are you sure you want to run this command (Y/n)? ")
 						if !confirm {
@@ -199,7 +203,7 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 					}
 
 					ctx := journal.ContextWithRecorder(ctx, a.recorder)
-					output, err := a.strategy.Tools.InvokeTool(ctx, functionName, call.Arguments, tools.InvokeToolOptions{
+					output, err := toolCall.InvokeTool(ctx, tools.InvokeToolOptions{
 						WorkDir: a.workDir,
 					})
 					if err != nil {
@@ -212,7 +216,7 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 					}
 
 					currChatContent = append(currChatContent, gollm.FunctionCallResult{
-						Name:   functionName,
+						Name:   call.Name,
 						Result: result,
 					})
 

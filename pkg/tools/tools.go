@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
@@ -69,6 +71,35 @@ func (t *Tools) RegisterTool(tool Tool) {
 	t.tools[tool.Name()] = tool
 }
 
+type ToolCall struct {
+	tool      Tool
+	name      string
+	arguments map[string]any
+}
+
+func (t *ToolCall) PrettyPrint() string {
+	var args []string
+	for k, v := range t.arguments {
+		args = append(args, fmt.Sprintf("%s=%v", k, v))
+	}
+	sort.Strings(args)
+	return fmt.Sprintf("%s(%s)", t.name, strings.Join(args, ", "))
+}
+
+// ParseToolInvocation parses a request from the LLM into a tool call.
+func (t *Tools) ParseToolInvocation(ctx context.Context, name string, arguments map[string]any) (*ToolCall, error) {
+	tool := t.Lookup(name)
+	if tool == nil {
+		return nil, fmt.Errorf("tool %q not recognized", name)
+	}
+
+	return &ToolCall{
+		tool:      tool,
+		name:      name,
+		arguments: arguments,
+	}, nil
+}
+
 type InvokeToolOptions struct {
 	WorkDir string
 
@@ -87,14 +118,9 @@ type ToolResponseEvent struct {
 	Error    string `json:"error,omitempty"`
 }
 
-// executeAction handles the execution of a single action
-func (t *Tools) InvokeTool(ctx context.Context, name string, arguments map[string]any, opt InvokeToolOptions) (any, error) {
+// InvokeTool handles the execution of a single action
+func (t *ToolCall) InvokeTool(ctx context.Context, opt InvokeToolOptions) (any, error) {
 	recorder := journal.RecorderFromContext(ctx)
-
-	tool := t.Lookup(name)
-	if tool == nil {
-		return "", fmt.Errorf("tool %q not recognized", name)
-	}
 
 	callID := uuid.NewString()
 	recorder.Write(ctx, &journal.Event{
@@ -102,15 +128,15 @@ func (t *Tools) InvokeTool(ctx context.Context, name string, arguments map[strin
 		Action:    "tool-request",
 		Payload: ToolRequestEvent{
 			CallID:    callID,
-			Name:      name,
-			Arguments: arguments,
+			Name:      t.name,
+			Arguments: t.arguments,
 		},
 	})
 
 	ctx = context.WithValue(ctx, "kubeconfig", opt.Kubeconfig)
 	ctx = context.WithValue(ctx, "work_dir", opt.WorkDir)
 
-	response, err := tool.Run(ctx, arguments)
+	response, err := t.tool.Run(ctx, t.arguments)
 
 	{
 		ev := ToolResponseEvent{
