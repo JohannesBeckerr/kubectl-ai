@@ -4,7 +4,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-NAMESPACE=${NAMESPACE}
+NAMESPACE=list-images-for-pods
 
 kubectl delete namespace ${NAMESPACE} --ignore-not-found
 kubectl create namespace ${NAMESPACE}
