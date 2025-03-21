@@ -22,7 +22,7 @@ git clone https://github.com/GoogleCloudPlatform/kubectl-ai.git
 cd kubectl-ai
 
 # Build and install
-go install .
+dev/tasks/install
 ```
 
 ### Invoking
@@ -79,6 +79,15 @@ kubectl-ai
 ```
 
 This interactive mode allows you to have a conversation with the AI assistant, asking multiple questions in sequence while maintaining context from previous interactions. Simply type your queries and press Enter to receive responses. To exit the interactive shell, type `exit` or press Ctrl+C.
+
+You can also use the following keywords for specific actions:
+
+* `model`: Display the currently selected model.
+* `models`: List all available models.
+* `version`: Display the `kubectl-ai` version.
+* `reset`: Clear the conversational context.
+* `clear`: Clear the terminal screen.
+* `exit` or `quit`: Terminate the interactive shell (Ctrl+C also works).
 
 ### Examples
 
