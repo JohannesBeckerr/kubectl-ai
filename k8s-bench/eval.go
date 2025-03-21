@@ -170,7 +170,7 @@ func evaluateTask(ctx context.Context, config EvalConfig, taskID string, task Ta
 		args := []string{
 			"--kubeconfig", config.KubeConfig,
 			"--llm-provider", llmConfig.ProviderID,
-			"--strategy", llmConfig.Strategy,
+			fmt.Sprintf("--enable-tool-use-shim=%t", llmConfig.EnableToolUseShim),
 			"--model", llmConfig.ModelID,
 			"--trace-path", tracePath,
 		}

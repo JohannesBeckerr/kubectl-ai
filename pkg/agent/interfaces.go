@@ -12,22 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package llmstrategy
+package agent
 
 import (
 	"context"
 	"io"
-
-	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 )
 
-type Strategy interface {
-	// NewConversation starts a new conversation with the LLM.
-	// A conversation has state that persists across rounds.
-	NewConversation(ctx context.Context, userInterface ui.UI) (Conversation, error)
-}
-
-type Conversation interface {
+type Agent interface {
 	// Close should be called to free up resources
 	io.Closer
 
