@@ -40,6 +40,9 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// Version will be set at build time
+var Version = "0.1.0-dev"
+
 // models
 var geminiModels = []string{
 	"gemini-2.0-flash-thinking-exp-01-21",
@@ -371,6 +374,8 @@ func run(ctx context.Context) error {
 			chatSession.Model = parts[1]
 			_ = llmClient.SetModel(chatSession.Model)
 			u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
+		case query == "version":
+			u.RenderOutput(ctx, fmt.Sprintf("Client version: `%s`\n", Version), ui.RenderMarkdown())
 		default:
 			if err := conversation.RunOneRound(ctx, query); err != nil {
 				return err
