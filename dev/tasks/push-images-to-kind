@@ -17,9 +17,9 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-if [[ -z "${IMAGE_TAG:-}" ]]; then
-  IMAGE_TAG=latest
-fi
-echo "Building ${IMAGE_PREFIX:-}kubectlai-agent-trivy:${IMAGE_TAG}"
+export IMAGE_PREFIX=fake.registry/
+export IMAGE_TAG=dev
 
-docker buildx build -f images/tasks/trivy/Dockerfile -t ${IMAGE_PREFIX:-}kubectlai-agent-trivy:${IMAGE_TAG} --load .
+dev/tasks/build-agent-images
+
+kind load docker-image fake.registry/kubectlai-agent-trivy:dev

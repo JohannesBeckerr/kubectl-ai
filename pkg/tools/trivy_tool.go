@@ -22,7 +22,10 @@ import (
 	"os/exec"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
+	"google.golang.org/protobuf/encoding/prototext"
 	"k8s.io/klog/v2"
+	ksandboxclient "k8s.io/test-infra/experiment/ksandbox/pkg/client"
+	ksandboxpb "k8s.io/test-infra/experiment/ksandbox/protocol/ksandbox/v1alpha1"
 )
 
 func init() {
@@ -75,7 +78,7 @@ func (t *ScanImageWithTrivy) Run(ctx context.Context, opts *ExecutionOptions) (a
 	cmd.Dir = opts.WorkDir
 	cmd.Env = os.Environ()
 
-	runInDocker := true
+	runInDocker := false
 	if runInDocker {
 		dockerImage := "kubectlai-agent-trivy:latest"
 		dockerArgs := []string{"docker", "run", "--rm", "-w", "/work", "-v", opts.WorkDir + ":/work", dockerImage}
@@ -87,7 +90,46 @@ func (t *ScanImageWithTrivy) Run(ctx context.Context, opts *ExecutionOptions) (a
 		cmd.Env = os.Environ()
 		return executeCommand(cmd)
 	}
+
+	runInKube := true
+	if runInKube {
+		return t.runInKube(ctx)
+	}
+
 	return executeCommand(cmd)
+}
+
+func (t *ScanImageWithTrivy) runInKube(ctx context.Context) (*ExecResult, error) {
+	namespace := "default"
+	image := "fake.registry/kubectlai-agent-trivy:dev"
+	buildAgentImage := "fake.registry/ksandbox-agent:dev"
+
+	// We assume this is being run on a developer machine (it's a test program),
+	// rather than in-cluster.
+	usePortForward := true
+	c, err := ksandboxclient.NewAgentClient(ctx, namespace, buildAgentImage, image, usePortForward)
+	if err != nil {
+		return nil, fmt.Errorf("error building agent client: %w", err)
+	}
+	defer c.Close()
+
+	command := []string{"trivy", "image", t.Image}
+
+	request := &ksandboxpb.ExecuteCommandRequest{
+		Command: command,
+	}
+	response, err := c.ExecuteCommand(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("error executing in buildagent: %w", err)
+	}
+
+	fmt.Printf("response: %s", prototext.Format(response))
+
+	return &ExecResult{
+		Stdout:   string(response.Stdout),
+		Stderr:   string(response.Stderr),
+		ExitCode: int(response.ExitCode),
+	}, nil
 }
 
 func (opts *ExecutionOptions) parseFunctionArgsInto(task any) error {
