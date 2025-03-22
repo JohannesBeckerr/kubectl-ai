@@ -151,24 +151,40 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("loading configuration file: %w", err)
 	}
 
-	maxIterations := flag.Int("max-iterations", 20, "maximum number of iterations agent will try before giving up")
-	kubeconfig := flag.String("kubeconfig", "", "path to the kubeconfig file")
-	promptTemplateFile := flag.String("prompt-template-file", "", "path to custom prompt template file")
-	tracePath := flag.String("trace-path", "trace.log", "path to the trace file")
-	removeWorkDir := flag.Bool("remove-workdir", false, "remove the temporary working directory after execution")
+	flagset := flag.NewFlagSet("kubectl-ai", flag.ExitOnError)
+	maxIterations := flagset.Int("max-iterations", 20, "maximum number of iterations agent will try before giving up")
+	kubeconfig := flagset.String("kubeconfig", "", "path to the kubeconfig file")
+	promptTemplateFile := flagset.String("prompt-template-file", "", "path to custom prompt template file")
+	tracePath := flagset.String("trace-path", "trace.log", "path to the trace file")
+	removeWorkDir := flagset.Bool("remove-workdir", false, "remove the temporary working directory after execution")
 
-	flag.StringVar(&opt.ProviderID, "llm-provider", opt.ProviderID, "language model provider")
-	flag.StringVar(&opt.ModelID, "model", opt.ModelID, "language model e.g. gemini-2.0-flash-thinking-exp-01-21, gemini-2.0-flash")
-	flag.BoolVar(&opt.AsksForConfirmation, "ask-for-confirmation", opt.AsksForConfirmation, "ask for confirmation before executing kubectl commands that modify resources")
-	flag.BoolVar(&opt.MCPServer, "mcp-server", opt.MCPServer, "run in MCP server mode")
-	flag.BoolVar(&opt.EnableToolUseShim, "enable-tool-use-shim", opt.EnableToolUseShim, "enable tool use shim")
-	// add commandline flags for logging
-	klog.InitFlags(nil)
+	flagset.StringVar(&opt.ProviderID, "llm-provider", opt.ProviderID, "language model provider")
+	flagset.StringVar(&opt.ModelID, "model", opt.ModelID, "language model e.g. gemini-2.0-flash-thinking-exp-01-21, gemini-2.0-flash")
+	flagset.BoolVar(&opt.AsksForConfirmation, "ask-for-confirmation", opt.AsksForConfirmation, "ask for confirmation before executing kubectl commands that modify resources")
+	flagset.BoolVar(&opt.MCPServer, "mcp-server", opt.MCPServer, "run in MCP server mode")
+	flagset.BoolVar(&opt.EnableToolUseShim, "enable-tool-use-shim", opt.EnableToolUseShim, "enable tool use shim")
 
-	flag.Set("logtostderr", "false") // disable logging to stderr
-	flag.Set("log_file", "/tmp/kubectl-ai.log")
+	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
+	{
+		// add commandline flags for logging
+		klog.InitFlags(klogFlags)
+		// Copy the flags we want
+		klogFlags.VisitAll(func(f *flag.Flag) {
+			addFlag := false
+			switch f.Name {
+			case "logtostderr", "log_file", "v":
+				addFlag = true
+			}
+			if addFlag {
+				flagset.Var(f.Value, f.Name, f.Usage)
+			}
+		})
+	}
 
-	flag.Parse()
+	flagset.Set("logtostderr", "false") // disable logging to stderr
+	flagset.Set("log_file", "/tmp/kubectl-ai.log")
+
+	flagset.Parse(os.Args[1:])
 
 	// Handle kubeconfig with priority: command-line arg > env var > default path
 	kubeconfigPath := *kubeconfig
@@ -197,7 +213,7 @@ func run(ctx context.Context) error {
 	}
 
 	// Check for positional arguments (after all flags are parsed)
-	args := flag.Args()
+	args := flagset.Args()
 	var queryFromCmd string
 
 	// Check if stdin has data (is not a terminal)
