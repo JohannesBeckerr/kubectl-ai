@@ -98,18 +98,32 @@ func (o *Options) LoadConfiguration(b []byte) error {
 	return nil
 }
 
-func run(ctx context.Context) error {
-	// Command line flags
-	var opt Options
-	opt.InitDefaults()
+func (o *Options) LoadConfigurationFile() error {
+	configPaths := []string{
+		"{CONFIG}/kubectl-ai/config.yaml",
+		"{HOME}/.config/kubectl-ai/config.yaml",
+	}
 
-	{
+	for _, configPath := range configPaths {
 		// Try to load configuration
-		configDir, err := os.UserConfigDir()
-		if err != nil {
-			return fmt.Errorf("getting user config directory: %w", err)
+		tokens := strings.Split(configPath, "/")
+		for i, token := range tokens {
+			if token == "{CONFIG}" {
+				configDir, err := os.UserConfigDir()
+				if err != nil {
+					return fmt.Errorf("getting user config directory: %w", err)
+				}
+				tokens[i] = configDir
+			}
+			if token == "{HOME}" {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					return fmt.Errorf("getting user home directory: %w", err)
+				}
+				tokens[i] = homeDir
+			}
 		}
-		configPath := filepath.Join(configDir, "kubectl-ai", "config.yaml")
+		configPath = filepath.Join(tokens...)
 		configBytes, err := os.ReadFile(configPath)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -118,29 +132,59 @@ func run(ctx context.Context) error {
 				fmt.Fprintf(os.Stderr, "warning: could not load defaults from %q: %v\n", configPath, err)
 			}
 		}
-		if err := opt.LoadConfiguration(configBytes); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: error loading configuration from %q: %v\n", configPath, err)
+		if len(configBytes) > 0 {
+			if err := o.LoadConfiguration(configBytes); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: error loading configuration from %q: %v\n", configPath, err)
+			}
 		}
 	}
 
-	maxIterations := flag.Int("max-iterations", 20, "maximum number of iterations agent will try before giving up")
-	kubeconfig := flag.String("kubeconfig", "", "path to the kubeconfig file")
-	promptTemplateFile := flag.String("prompt-template-file", "", "path to custom prompt template file")
-	tracePath := flag.String("trace-path", "trace.log", "path to the trace file")
-	removeWorkDir := flag.Bool("remove-workdir", false, "remove the temporary working directory after execution")
+	return nil
+}
 
-	flag.StringVar(&opt.ProviderID, "llm-provider", opt.ProviderID, "language model provider")
-	flag.StringVar(&opt.ModelID, "model", opt.ModelID, "language model e.g. gemini-2.0-flash-thinking-exp-01-21, gemini-2.0-flash")
-	flag.BoolVar(&opt.AsksForConfirmation, "ask-for-confirmation", opt.AsksForConfirmation, "ask for confirmation before executing kubectl commands that modify resources")
-	flag.BoolVar(&opt.MCPServer, "mcp-server", opt.MCPServer, "run in MCP server mode")
-	flag.BoolVar(&opt.EnableToolUseShim, "enable-tool-use-shim", opt.EnableToolUseShim, "enable tool use shim")
-	// add commandline flags for logging
-	klog.InitFlags(nil)
+func run(ctx context.Context) error {
+	// Command line flags
+	var opt Options
+	opt.InitDefaults()
 
-	flag.Set("logtostderr", "false") // disable logging to stderr
-	flag.Set("log_file", "/tmp/kubectl-ai.log")
+	if err := opt.LoadConfigurationFile(); err != nil {
+		return fmt.Errorf("loading configuration file: %w", err)
+	}
 
-	flag.Parse()
+	flagset := flag.NewFlagSet("kubectl-ai", flag.ExitOnError)
+	maxIterations := flagset.Int("max-iterations", 20, "maximum number of iterations agent will try before giving up")
+	kubeconfig := flagset.String("kubeconfig", "", "path to the kubeconfig file")
+	promptTemplateFile := flagset.String("prompt-template-file", "", "path to custom prompt template file")
+	tracePath := flagset.String("trace-path", "trace.log", "path to the trace file")
+	removeWorkDir := flagset.Bool("remove-workdir", false, "remove the temporary working directory after execution")
+
+	flagset.StringVar(&opt.ProviderID, "llm-provider", opt.ProviderID, "language model provider")
+	flagset.StringVar(&opt.ModelID, "model", opt.ModelID, "language model e.g. gemini-2.0-flash-thinking-exp-01-21, gemini-2.0-flash")
+	flagset.BoolVar(&opt.AsksForConfirmation, "ask-for-confirmation", opt.AsksForConfirmation, "ask for confirmation before executing kubectl commands that modify resources")
+	flagset.BoolVar(&opt.MCPServer, "mcp-server", opt.MCPServer, "run in MCP server mode")
+	flagset.BoolVar(&opt.EnableToolUseShim, "enable-tool-use-shim", opt.EnableToolUseShim, "enable tool use shim")
+
+	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
+	{
+		// add commandline flags for logging
+		klog.InitFlags(klogFlags)
+		// Copy the flags we want
+		klogFlags.VisitAll(func(f *flag.Flag) {
+			addFlag := false
+			switch f.Name {
+			case "logtostderr", "log_file", "v":
+				addFlag = true
+			}
+			if addFlag {
+				flagset.Var(f.Value, f.Name, f.Usage)
+			}
+		})
+	}
+
+	flagset.Set("logtostderr", "false") // disable logging to stderr
+	flagset.Set("log_file", "/tmp/kubectl-ai.log")
+
+	flagset.Parse(os.Args[1:])
 
 	// Handle kubeconfig with priority: command-line arg > env var > default path
 	kubeconfigPath := *kubeconfig
@@ -169,7 +213,7 @@ func run(ctx context.Context) error {
 	}
 
 	// Check for positional arguments (after all flags are parsed)
-	args := flag.Args()
+	args := flagset.Args()
 	var queryFromCmd string
 
 	// Check if stdin has data (is not a terminal)
@@ -418,9 +462,6 @@ func (s *kubectlMCPServer) handleToolCall(ctx context.Context, request mcp.CallT
 	modifiesResource := request.Params.Arguments["modifies_resource"].(string)
 	log.Info("Received tool call", "tool", name, "command", command, "modifies_resource", modifiesResource)
 
-	ctx = context.WithValue(ctx, "kubeconfig", s.kubectlConfig)
-	ctx = context.WithValue(ctx, "work_dir", s.workDir)
-
 	tool := tools.Lookup(name)
 	if tool == nil {
 		return &mcp.CallToolResult{
@@ -432,9 +473,15 @@ func (s *kubectlMCPServer) handleToolCall(ctx context.Context, request mcp.CallT
 			},
 		}, nil
 	}
-	output, err := tool.Run(ctx, map[string]any{
-		"command": command,
-	})
+
+	opt := &tools.ExecutionOptions{
+		FunctionArguments: map[string]any{
+			"command": command,
+		},
+		WorkDir:    s.workDir,
+		Kubeconfig: s.kubectlConfig,
+	}
+	output, err := tool.Run(ctx, opt)
 	if err != nil {
 		log.Error(err, "Error running tool call")
 		return &mcp.CallToolResult{
