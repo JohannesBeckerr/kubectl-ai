@@ -446,9 +446,6 @@ func (s *kubectlMCPServer) handleToolCall(ctx context.Context, request mcp.CallT
 	modifiesResource := request.Params.Arguments["modifies_resource"].(string)
 	log.Info("Received tool call", "tool", name, "command", command, "modifies_resource", modifiesResource)
 
-	ctx = context.WithValue(ctx, "kubeconfig", s.kubectlConfig)
-	ctx = context.WithValue(ctx, "work_dir", s.workDir)
-
 	tool := tools.Lookup(name)
 	if tool == nil {
 		return &mcp.CallToolResult{
@@ -460,9 +457,15 @@ func (s *kubectlMCPServer) handleToolCall(ctx context.Context, request mcp.CallT
 			},
 		}, nil
 	}
-	output, err := tool.Run(ctx, map[string]any{
-		"command": command,
-	})
+
+	opt := &tools.ExecutionOptions{
+		FunctionArguments: map[string]any{
+			"command": command,
+		},
+		WorkDir:    s.workDir,
+		Kubeconfig: s.kubectlConfig,
+	}
+	output, err := tool.Run(ctx, opt)
 	if err != nil {
 		log.Error(err, "Error running tool call")
 		return &mcp.CallToolResult{

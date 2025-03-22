@@ -58,10 +58,8 @@ func (t *ScanImageWithTrivy) FunctionDefinition() *gollm.FunctionDefinition {
 	}
 }
 
-func (t *ScanImageWithTrivy) Run(ctx context.Context, functionArgs map[string]any) (any, error) {
-	workDir := ctx.Value("work_dir").(string)
-
-	if err := parseFunctionArgs(functionArgs, t); err != nil {
+func (t *ScanImageWithTrivy) Run(ctx context.Context, opts *ExecutionOptions) (any, error) {
+	if err := opts.parseFunctionArgsInto(t); err != nil {
 		return nil, err
 	}
 
@@ -71,14 +69,14 @@ func (t *ScanImageWithTrivy) Run(ctx context.Context, functionArgs map[string]an
 
 	args := []string{"trivy", "image", t.Image}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	cmd.Dir = workDir
+	cmd.Dir = opts.WorkDir
 	cmd.Env = os.Environ()
 
 	return executeCommand(cmd)
 }
 
-func parseFunctionArgs(functionArgs map[string]any, task any) error {
-	j, err := json.Marshal(functionArgs)
+func (opts *ExecutionOptions) parseFunctionArgsInto(task any) error {
+	j, err := json.Marshal(opts.FunctionArguments)
 	if err != nil {
 		return fmt.Errorf("converting function parameters to json: %w", err)
 	}
