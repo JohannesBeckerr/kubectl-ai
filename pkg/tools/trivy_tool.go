@@ -22,6 +22,7 @@ import (
 	"os/exec"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/gollm"
+	"k8s.io/klog/v2"
 )
 
 func init() {
@@ -59,6 +60,8 @@ func (t *ScanImageWithTrivy) FunctionDefinition() *gollm.FunctionDefinition {
 }
 
 func (t *ScanImageWithTrivy) Run(ctx context.Context, opts *ExecutionOptions) (any, error) {
+	log := klog.FromContext(ctx)
+
 	if err := opts.parseFunctionArgsInto(t); err != nil {
 		return nil, err
 	}
@@ -72,6 +75,18 @@ func (t *ScanImageWithTrivy) Run(ctx context.Context, opts *ExecutionOptions) (a
 	cmd.Dir = opts.WorkDir
 	cmd.Env = os.Environ()
 
+	runInDocker := true
+	if runInDocker {
+		dockerImage := "kubectlai-agent-trivy:latest"
+		dockerArgs := []string{"docker", "run", "--rm", "-w", "/work", "-v", opts.WorkDir + ":/work", dockerImage}
+		dockerArgs = append(dockerArgs, args[1:]...)
+
+		log.Info("running trivy in docker", "args", dockerArgs)
+		cmd := exec.CommandContext(ctx, dockerArgs[0], dockerArgs[1:]...)
+		cmd.Dir = opts.WorkDir
+		cmd.Env = os.Environ()
+		return executeCommand(cmd)
+	}
 	return executeCommand(cmd)
 }
 
