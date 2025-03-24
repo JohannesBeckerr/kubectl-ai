@@ -21,9 +21,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
+
 	"k8s.io/klog/v2"
 )
 
@@ -33,23 +32,23 @@ const (
 
 // NewGeminiClient builds a client for the Gemini API.
 func NewGeminiClient(ctx context.Context) (*GeminiClient, error) {
-	var opts []option.ClientOption
 
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
 	}
 
-	opts = append(opts, option.WithAPIKey(apiKey))
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
 
-	client, err := genai.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("building gemini client: %w", err)
 	}
-	model := geminiDefaultModel
+
 	return &GeminiClient{
 		client: client,
-		model:  model,
 	}, nil
 }
 
@@ -67,24 +66,18 @@ var _ Client = &GeminiClient{}
 
 // ListModels lists the models available in the Gemini API.
 func (c *GeminiClient) ListModels(ctx context.Context) (modelNames []string, err error) {
-	models := c.client.ListModels(ctx)
-
-	for {
-		m, err := models.Next()
+	for model, err := range c.client.Models.All(ctx) {
 		if err != nil {
-			if err == iterator.Done {
-				break
-			}
-			return nil, err
+			return nil, fmt.Errorf("error listing models: %w", err)
 		}
-		modelNames = append(modelNames, strings.TrimPrefix(m.Name, "models/"))
+		modelNames = append(modelNames, strings.TrimPrefix(model.Name, "models/"))
 	}
 	return modelNames, nil
 }
 
 // Close frees the resources used by the client.
 func (c *GeminiClient) Close() error {
-	return c.client.Close()
+	return nil
 }
 
 // SetModel sets the model to use for the client.
@@ -114,111 +107,98 @@ func (c *GeminiClient) SetResponseSchema(responseSchema *Schema) error {
 func (c *GeminiClient) GenerateCompletion(ctx context.Context, request *CompletionRequest) (CompletionResponse, error) {
 	log := klog.FromContext(ctx)
 
-	model := c.client.GenerativeModel(c.model)
+	var config *genai.GenerateContentConfig
 
 	if c.responseSchema != nil {
-		model.ResponseSchema = c.responseSchema
-		model.ResponseMIMEType = "application/json"
+		config = &genai.GenerateContentConfig{
+			ResponseSchema:   c.responseSchema,
+			ResponseMIMEType: "application/json",
+		}
 	}
 
-	var geminiParts []genai.Part
+	content := []*genai.Content{
+		{Role: "user", Parts: []*genai.Part{{Text: request.Prompt}}},
+	}
 
-	geminiParts = append(geminiParts, genai.Text(request.Prompt))
-
-	log.Info("sending GenerateContent request to gemini", "parts", geminiParts)
-	geminiResponse, err := model.GenerateContent(ctx, geminiParts...)
+	log.Info("sending GenerateContent request to gemini", "content", content)
+	result, err := c.client.Models.GenerateContent(ctx, c.model, content, config)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(geminiResponse.Candidates) == 0 {
-		return nil, fmt.Errorf("got no responses from gemini")
-	}
-
-	if len(geminiResponse.Candidates) > 1 {
-		log.Info("only considering first candidate")
-		for i := 1; i < len(geminiResponse.Candidates); i++ {
-			candidate := geminiResponse.Candidates[i]
-			log.Info("ignoring candidate: %q", candidate.Content)
-		}
-	}
-	var response strings.Builder
-	candidate := geminiResponse.Candidates[0]
-	for _, part := range candidate.Content.Parts {
-		switch part := part.(type) {
-		case genai.Text:
-			if response.Len() != 0 {
-				response.WriteString("\n")
-			}
-			response.WriteString(string(part))
-		default:
-			return nil, fmt.Errorf("unexpected type of content part: %T", part)
-		}
-	}
-
-	return &GeminiCompletionResponse{geminiResponse: geminiResponse, text: response.String()}, nil
+	return &GeminiCompletionResponse{geminiResponse: result, text: result.Text()}, nil
 }
 
 // StartChat starts a new chat with the model.
 func (c *GeminiClient) StartChat(systemPrompt string) Chat {
-	model := c.client.GenerativeModel(c.model)
-
 	// Some values that are recommended by aistudio
-	model.SetTemperature(1)
-	model.SetTopK(40)
-	model.SetTopP(0.95)
-	model.SetMaxOutputTokens(8192)
-	model.ResponseMIMEType = "text/plain"
+	temperature := float32(1.0)
+	topK := float32(40)
+	topP := float32(0.95)
+	maxOutputTokens := int32(8192)
+
+	chat := &GeminiChat{
+		model:  c.model,
+		client: c.client,
+		genConfig: &genai.GenerateContentConfig{
+			SystemInstruction: &genai.Content{
+				Parts: []*genai.Part{
+					{Text: systemPrompt},
+				},
+			},
+			Temperature:      &temperature,
+			TopK:             &topK,
+			TopP:             &topP,
+			MaxOutputTokens:  &maxOutputTokens,
+			ResponseMIMEType: "text/plain",
+		},
+		history: []*genai.Content{},
+	}
+
+	if c.model == "gemma-3-27b-it" {
+		// Note: gemma-3-27b-it does not allow system prompt
+		// xref: https://discuss.ai.google.dev/t/gemma-3-missing-features-despite-announcement/71692
+		// TODO: remove this hack once gemma-3-27b-it supports system prompt
+		chat.genConfig.SystemInstruction = nil
+		chat.history = []*genai.Content{
+			{Role: "user", Parts: []*genai.Part{{Text: systemPrompt}}},
+		}
+	}
 
 	if c.responseSchema != nil {
-		model.ResponseSchema = c.responseSchema
-		model.ResponseMIMEType = "application/json"
+		chat.genConfig.ResponseSchema = c.responseSchema
+		chat.genConfig.ResponseMIMEType = "application/json"
 	}
-
-	if systemPrompt != "" {
-		model.SystemInstruction = &genai.Content{
-			Parts: []genai.Part{
-				genai.Text(systemPrompt),
-			},
-		}
-	} else {
-		klog.Warningf("systemPrompt not provided")
-	}
-
-	chat := model.StartChat()
-
-	return &GeminiChat{
-		model: model,
-		chat:  chat,
-	}
+	return chat
 }
 
 // GeminiChat is a chat with the model.
 // It implements the Chat interface.
 type GeminiChat struct {
-	model *genai.GenerativeModel
-	chat  *genai.ChatSession
+	model     string
+	client    *genai.Client
+	history   []*genai.Content
+	genConfig *genai.GenerateContentConfig
 }
 
 // SetFunctionDefinitions sets the function definitions for the chat.
 // This allows the LLM to call user-defined functions.
 func (c *GeminiChat) SetFunctionDefinitions(functionDefinitions []*FunctionDefinition) error {
-	var geminiFunctionDefinitions []*genai.FunctionDeclaration
 	for _, functionDefinition := range functionDefinitions {
 		parameters, err := toGeminiSchema(functionDefinition.Parameters)
 		if err != nil {
 			return err
 		}
-		geminiFunctionDefinitions = append(geminiFunctionDefinitions, &genai.FunctionDeclaration{
-			Name:        functionDefinition.Name,
-			Description: functionDefinition.Description,
-			Parameters:  parameters,
+		c.genConfig.Tools = append(c.genConfig.Tools, &genai.Tool{
+			FunctionDeclarations: []*genai.FunctionDeclaration{
+				{
+					Name:        functionDefinition.Name,
+					Description: functionDefinition.Description,
+					Parameters:  parameters,
+				},
+			},
 		})
 	}
-
-	c.model.Tools = append(c.model.Tools, &genai.Tool{
-		FunctionDeclarations: geminiFunctionDefinitions,
-	})
 	return nil
 }
 
@@ -269,24 +249,33 @@ func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, e
 	log := klog.FromContext(ctx)
 	log.V(1).Info("sending LLM request", "user", contents)
 
-	var geminiParts []genai.Part
+	genaiContent := &genai.Content{
+		Role:  "user",
+		Parts: []*genai.Part{},
+	}
 	for _, content := range contents {
 		switch v := content.(type) {
 		case string:
-			geminiParts = append(geminiParts, genai.Text(v))
+			genaiContent.Parts = append(genaiContent.Parts, &genai.Part{Text: v})
 		case FunctionCallResult:
-			geminiParts = append(geminiParts, genai.FunctionResponse{
-				Name:     v.Name,
-				Response: v.Result,
+			genaiContent.Parts = append(genaiContent.Parts, &genai.Part{
+				FunctionResponse: &genai.FunctionResponse{
+					ID:       v.ID,
+					Name:     v.Name,
+					Response: v.Result,
+				},
 			})
 		default:
 			return nil, fmt.Errorf("unexpected type of content: %T", content)
 		}
 	}
-	geminiResponse, err := c.chat.SendMessage(ctx, geminiParts...)
+	c.history = append(c.history, genaiContent)
+	result, err := c.client.Models.GenerateContent(ctx, c.model, c.history, c.genConfig)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to generate content: %w", err)
 	}
+	c.history = append(c.history, result.Candidates[0].Content)
+	geminiResponse := result
 	log.V(1).Info("got LLM response", "response", geminiResponse)
 	return &GeminiChatResponse{geminiResponse: geminiResponse}, nil
 }
@@ -308,16 +297,7 @@ func (r *GeminiChatResponse) MarshalJSON() ([]byte, error) {
 
 // String returns a string representation of the response.
 func (r *GeminiChatResponse) String() string {
-	var response strings.Builder
-	response.WriteString("{candidates=[")
-	for i, candidate := range r.Candidates() {
-		if i > 0 {
-			response.WriteString(", ")
-		}
-		response.WriteString(candidate.String())
-	}
-	response.WriteString("]}")
-	return response.String()
+	return r.geminiResponse.Text()
 }
 
 // UsageMetadata returns the usage metadata for the response.
@@ -329,7 +309,6 @@ func (r *GeminiChatResponse) UsageMetadata() any {
 func (r *GeminiChatResponse) Candidates() []Candidate {
 	var candidates []Candidate
 	for _, candidate := range r.geminiResponse.Candidates {
-		// klog.Infof("candidate: %+v", candidate)
 		candidates = append(candidates, &GeminiCandidate{candidate: candidate})
 	}
 	return candidates
@@ -371,7 +350,7 @@ func (r *GeminiCandidate) Parts() []Part {
 	var parts []Part
 	if r.candidate.Content != nil {
 		for _, part := range r.candidate.Content.Parts {
-			parts = append(parts, &GeminiPart{part: part})
+			parts = append(parts, &GeminiPart{part: *part})
 		}
 	}
 	return parts
@@ -385,21 +364,22 @@ type GeminiPart struct {
 
 // AsText returns the text of the part.
 func (p *GeminiPart) AsText() (string, bool) {
-	if text, ok := p.part.(genai.Text); ok {
-		return string(text), true
+	if p.part.Text != "" {
+		return p.part.Text, true
 	}
 	return "", false
 }
 
 // AsFunctionCalls returns the function calls of the part.
 func (p *GeminiPart) AsFunctionCalls() ([]FunctionCall, bool) {
-	if functionCall, ok := p.part.(genai.FunctionCall); ok {
-		var ret []FunctionCall
-		ret = append(ret, FunctionCall{
-			Name:      functionCall.Name,
-			Arguments: functionCall.Args,
-		})
-		return ret, true
+	if p.part.FunctionCall != nil {
+		return []FunctionCall{
+			{
+				ID:        p.part.FunctionCall.ID,
+				Name:      p.part.FunctionCall.Name,
+				Arguments: p.part.FunctionCall.Args,
+			},
+		}, true
 	}
 	return nil, false
 }

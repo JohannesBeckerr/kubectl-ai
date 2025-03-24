@@ -225,6 +225,7 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 						}
 
 						currChatContent = append(currChatContent, gollm.FunctionCallResult{
+							ID:     call.ID,
 							Name:   call.Name,
 							Result: result,
 						})

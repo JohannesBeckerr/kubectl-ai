@@ -65,6 +65,7 @@ type CompletionResponse interface {
 // FunctionCall is a function call to a language model.
 // The LLM will reply with a FunctionCall to a user-defined function, and we will send the results back.
 type FunctionCall struct {
+	ID        string         `json:"id,omitempty"`
 	Name      string         `json:"name,omitempty"`
 	Arguments map[string]any `json:"arguments,omitempty"`
 }
@@ -102,6 +103,7 @@ const (
 // FunctionCallResult is the result of a function call.
 // We use this to send the results back to the LLM.
 type FunctionCallResult struct {
+	ID     string         `json:"id,omitempty"`
 	Name   string         `json:"name,omitempty"`
 	Result map[string]any `json:"result,omitempty"`
 }

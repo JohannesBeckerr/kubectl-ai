@@ -78,6 +78,9 @@ type ToolCall struct {
 }
 
 func (t *ToolCall) PrettyPrint() string {
+	if command, ok := t.arguments["command"]; ok {
+		return command.(string)
+	}
 	var args []string
 	for k, v := range t.arguments {
 		args = append(args, fmt.Sprintf("%s=%v", k, v))
