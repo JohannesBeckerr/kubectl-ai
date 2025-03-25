@@ -1,7 +1,8 @@
-FROM llamacpp-server:latest
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
 
 # TODO: Add checksum
-ADD https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf?download=true /gemma-3-12b-it-Q4_K_M.gguf
+COPY .cache/gemma-3-12b-it-Q4_K_M.gguf /gemma-3-12b-it-Q4_K_M.gguf
 
 # Default model
 ENV LLAMA_ARG_MODEL=/gemma-3-12b-it-Q4_K_M.gguf
