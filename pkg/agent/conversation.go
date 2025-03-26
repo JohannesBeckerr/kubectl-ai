@@ -83,7 +83,15 @@ func (s *Conversation) Init(ctx context.Context, u ui.UI) error {
 	}
 
 	// Start a new chat session
-	llmChat := s.LLM.StartChat(systemPrompt, s.Model)
+	s.llmChat = gollm.NewRetryChat(
+		s.LLM.StartChat(systemPrompt, s.Model),
+		gollm.RetryConfig{
+			MaxAttempts:    3,
+			InitialBackoff: 1 * time.Second,
+			MaxBackoff:     10 * time.Second,
+			BackoffFactor:  2,
+			Jitter:         true,
+		}, gollm.DefaultIsRetryableError)
 
 	if !s.EnableToolUseShim {
 		var functionDefinitions []*gollm.FunctionDefinition
@@ -94,11 +102,10 @@ func (s *Conversation) Init(ctx context.Context, u ui.UI) error {
 		sort.Slice(functionDefinitions, func(i, j int) bool {
 			return functionDefinitions[i].Name < functionDefinitions[j].Name
 		})
-		if err := llmChat.SetFunctionDefinitions(functionDefinitions); err != nil {
+		if err := s.llmChat.SetFunctionDefinitions(functionDefinitions); err != nil {
 			return fmt.Errorf("setting function definitions: %w", err)
 		}
 	}
-	s.llmChat = llmChat
 	s.workDir = workDir
 	s.UI = u
 
