@@ -198,9 +198,9 @@ func runEvals(ctx context.Context) error {
 	for llmProviderID, models := range models {
 		var toolUseShimStr string
 		if enableToolUseShim {
-			toolUseShimStr = "tool_use_shim_enabled"
+			toolUseShimStr = "shim_enabled"
 		} else {
-			toolUseShimStr = "tool_use_shim_disabled"
+			toolUseShimStr = "shim_disabled"
 		}
 		for _, modelID := range models {
 			id := fmt.Sprintf("%s-%s-%s", toolUseShimStr, llmProviderID, modelID)
@@ -323,9 +323,9 @@ func printMarkdownResults(results []model.TaskResult, resultsFilePath string) er
 	for _, result := range results {
 		var toolUseShimStr string
 		if result.LLMConfig.EnableToolUseShim {
-			toolUseShimStr = "tool_use_shim_enabled"
+			toolUseShimStr = "shim_enabled"
 		} else {
-			toolUseShimStr = "tool_use_shim_disabled"
+			toolUseShimStr = "shim_disabled"
 		}
 		resultsByToolUseShim[toolUseShimStr] = append(resultsByToolUseShim[toolUseShimStr], result)
 		allModels[result.LLMConfig.ModelID] = true
@@ -426,7 +426,7 @@ func printMarkdownResults(results []model.TaskResult, resultsFilePath string) er
 	// Create a table for each toolUseShimStr
 	for toolUseShimStr, toolUseShimStrResults := range resultsByToolUseShim {
 		// Print a header for this toolUseShimStr
-		buffer.WriteString(fmt.Sprintf("## Tool Use Shim: %s\n\n", toolUseShimStr))
+		buffer.WriteString(fmt.Sprintf("## Tool Use : %s\n\n", toolUseShimStr))
 
 		// Create the table header
 		buffer.WriteString("| Task | Provider | Model | Result | Error |\n")
