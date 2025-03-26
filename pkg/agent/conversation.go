@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -56,13 +57,15 @@ type Conversation struct {
 	// Recorder captures events for diagnostics
 	Recorder journal.Recorder
 
-	UI      ui.UI
+	// doc is the document which renders the conversation
+	doc *ui.Document
+
 	llmChat gollm.Chat
 
 	workDir string
 }
 
-func (s *Conversation) Init(ctx context.Context, u ui.UI) error {
+func (s *Conversation) Init(ctx context.Context, doc *ui.Document) error {
 	log := klog.FromContext(ctx)
 
 	// Create a temporary working directory
@@ -108,7 +111,7 @@ func (s *Conversation) Init(ctx context.Context, u ui.UI) error {
 		}
 	}
 	s.workDir = workDir
-	s.UI = u
+	s.doc = doc
 
 	return nil
 }
@@ -186,7 +189,7 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 				textResponse := text
 				// If we have a text response, render it
 				if textResponse != "" {
-					a.UI.RenderOutput(ctx, textResponse, ui.RenderMarkdown())
+					a.doc.AddBlock(ui.NewAgentTextBlock().SetText(textResponse))
 				}
 			}
 
@@ -204,27 +207,42 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 					}
 
 					s := toolCall.PrettyPrint()
-					a.UI.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", s), ui.Foreground(ui.ColorGreen))
+					a.doc.AddBlock(ui.NewAgentTextBlock().SetText(fmt.Sprintf("  Running: %s\n", s)).SetColor(ui.ColorGreen))
 					// Ask for confirmation only if SkipPermissions is false AND the tool modifies resources.
 					if !a.SkipPermissions && call.Arguments["modifies_resource"] != "no" {
 						confirmationPrompt := `  Do you want to proceed?
   1) Yes
   2) Yes, and don't ask me again
   3) No`
-						selectedChoice := a.UI.AskForConfirmation(ctx, confirmationPrompt, []int{1, 2, 3})
+
+						optionsBlock := ui.NewInputOptionBlock().SetPrompt(confirmationPrompt)
+						optionsBlock.SetOptions([]string{"1", "2", "3"})
+						a.doc.AddBlock(optionsBlock)
+
+						selectedChoice, err := optionsBlock.Observable().Wait()
+						if err != nil {
+							if err == io.EOF {
+								// Use hit control-D, or was piping and we reached the end of stdin.
+								// Not a "big" problem
+								return nil
+							}
+							return fmt.Errorf("reading input: %w", err)
+						}
+
 						switch selectedChoice {
-						case 1:
+						case "1":
 							// Proceed with the operation
-						case 2:
+						case "2":
 							a.SkipPermissions = true
-						case 3:
-							a.UI.RenderOutput(ctx, "Operation cancelled by user.\n", ui.RenderMarkdown())
+						case "3":
+							a.doc.AddBlock(ui.NewAgentTextBlock().SetText("Operation cancelled by user."))
 							return nil
 						default:
 							// This case should technically not be reachable due to AskForConfirmation loop
-							log.Error(fmt.Errorf("unexpected confirmation choice: %d", selectedChoice), "Invalid choice received from AskForConfirmation")
-							a.UI.RenderOutput(ctx, "Invalid choice received. Cancelling operation.\n", ui.Foreground(ui.ColorRed))
-							return fmt.Errorf("invalid confirmation choice: %d", selectedChoice)
+							err := fmt.Errorf("invalid confirmation choice: %q", selectedChoice)
+							log.Error(err, "Invalid choice received from AskForConfirmation")
+							a.doc.AddBlock(ui.NewErrorBlock().SetText("Invalid choice received. Cancelling operation."))
+							return err
 						}
 					}
 
@@ -266,7 +284,8 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 
 	// If we've reached the maximum number of iterations
 	log.Info("Max iterations reached", "iterations", maxIterations)
-	a.UI.RenderOutput(ctx, fmt.Sprintf("\nSorry, couldn't complete the task after %d iterations.\n", maxIterations), ui.Foreground(ui.ColorRed))
+	errorBlock := ui.NewErrorBlock().SetText(fmt.Sprintf("Sorry, couldn't complete the task after %d iterations.\n", maxIterations))
+	a.doc.AddBlock(errorBlock)
 	return fmt.Errorf("max iterations reached")
 }
 

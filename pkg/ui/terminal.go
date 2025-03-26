@@ -15,9 +15,12 @@
 package ui
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
-	"strconv"
+	"io"
+	"os"
 	"strings"
 
 	"slices"
@@ -30,11 +33,18 @@ import (
 type TerminalUI struct {
 	journal          journal.Recorder
 	markdownRenderer *glamour.TermRenderer
+
+	subscription io.Closer
+
+	// currentBlock is the block we are rendering
+	currentBlock Block
+	// currentBlockText is text of the currentBlock that we have already rendered to the screen
+	currentBlockText string
 }
 
 var _ UI = &TerminalUI{}
 
-func NewTerminalUI(journal journal.Recorder) (*TerminalUI, error) {
+func NewTerminalUI(doc *Document, journal journal.Recorder) (*TerminalUI, error) {
 	mdRenderer, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithPreservedNewLines(),
@@ -43,7 +53,141 @@ func NewTerminalUI(journal journal.Recorder) (*TerminalUI, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error initializing the markdown renderer: %w", err)
 	}
-	return &TerminalUI{markdownRenderer: mdRenderer, journal: journal}, nil
+	u := &TerminalUI{markdownRenderer: mdRenderer, journal: journal}
+
+	subscription := doc.AddSubscription(u)
+	u.subscription = subscription
+
+	return u, nil
+}
+
+func (u *TerminalUI) Close() error {
+	var errs []error
+	if u.subscription != nil {
+		if err := u.subscription.Close(); err != nil {
+			errs = append(errs, err)
+		} else {
+			u.subscription = nil
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (u *TerminalUI) DocumentChanged(doc *Document, block Block) {
+	blockIndex := doc.IndexOf(block)
+
+	if blockIndex != doc.NumBlocks()-1 {
+		klog.Warningf("update to blocks other than the last block is not supported in terminal mode")
+		return
+	}
+
+	if u.currentBlock != block {
+		u.currentBlock = block
+		if u.currentBlockText != "" {
+			fmt.Printf("\n")
+		}
+		u.currentBlockText = ""
+	}
+
+	text := ""
+
+	var styleOptions []StyleOption
+	switch block := block.(type) {
+	case *ErrorBlock:
+		styleOptions = append(styleOptions, Foreground(ColorRed))
+		text = block.Text()
+	case *FunctionCallRequestBlock:
+		styleOptions = append(styleOptions, Foreground(ColorGreen))
+		text = block.Text()
+	case *AgentTextBlock:
+		styleOptions = append(styleOptions, RenderMarkdown())
+		if block.Color != "" {
+			styleOptions = append(styleOptions, Foreground(block.Color))
+		}
+		text = block.Text()
+	case *InputTextBlock:
+		fmt.Print("\n>>> ")
+		reader := bufio.NewReader(os.Stdin)
+		query, err := reader.ReadString('\n')
+		if err != nil {
+			block.Observable().Set("", err)
+		} else {
+			block.Observable().Set(query, nil)
+		}
+		return
+
+	case *InputOptionBlock:
+		fmt.Printf("%s\n", block.Prompt)
+
+		for {
+			fmt.Print("  Enter your choice (number): ")
+			var response string
+			_, err := fmt.Scanln(&response)
+			if err != nil {
+				block.Observable().Set("", err)
+				break
+			}
+
+			choice := strings.TrimSpace(response)
+
+			if slices.Contains(block.Options, choice) {
+				block.Observable().Set(choice, nil)
+				break
+			}
+
+			// If not returned, the choice was invalid
+			fmt.Printf("  Invalid choice. Please enter one of: %s\n", strings.Join(block.Options, ", "))
+			continue
+		}
+		return
+	}
+
+	computedStyle := &style{}
+	for _, opt := range styleOptions {
+		opt(computedStyle)
+	}
+
+	printText := text
+
+	// This supports streaming output, though we don't wire it up yet
+	if u.currentBlockText != "" {
+		if strings.HasPrefix(text, u.currentBlockText) {
+			printText = strings.TrimPrefix(printText, u.currentBlockText)
+		} else {
+			klog.Warningf("text did not match text already rendered; text %q; currentBlockText %q", text, u.currentBlockText)
+		}
+	}
+	u.currentBlockText = text
+
+	// TODO: Reintroduce markdown support (it's difficult with streaming)
+	//
+	// if computedStyle.renderMarkdown {
+	// 	out, err := u.markdownRenderer.Render(printText)
+	// 	if err != nil {
+	// 		klog.Errorf("Error rendering markdown: %v", err)
+	// 	} else {
+	// 		printText = out
+	// 	}
+	// }
+
+	reset := ""
+	switch computedStyle.foreground {
+	case ColorRed:
+		fmt.Printf("\033[31m")
+		reset += "\033[0m"
+	case ColorGreen:
+		fmt.Printf("\033[32m")
+		reset += "\033[0m"
+	case ColorWhite:
+		fmt.Printf("\033[37m")
+		reset += "\033[0m"
+
+	case "":
+	default:
+		klog.Info("foreground color not supported by TerminalUI", "color", computedStyle.foreground)
+	}
+
+	fmt.Printf("%s%s", printText, reset)
 }
 
 func (u *TerminalUI) RenderOutput(ctx context.Context, s string, styleOptions ...StyleOption) {
@@ -91,41 +235,4 @@ func (u *TerminalUI) RenderOutput(ctx context.Context, s string, styleOptions ..
 
 func (u *TerminalUI) ClearScreen() {
 	fmt.Print("\033[H\033[2J")
-}
-
-func (u *TerminalUI) AskForConfirmation(ctx context.Context, s string, validChoices []int) int {
-	log := klog.FromContext(ctx)
-	fmt.Printf("%s\n", s)
-
-	validStrs := make([]string, len(validChoices))
-	for i, v := range validChoices {
-		validStrs[i] = strconv.Itoa(v)
-	}
-
-	for {
-		fmt.Print("  Enter your choice (number): ")
-		var response string
-		_, err := fmt.Scanln(&response)
-		if err != nil {
-			log.Error(err, "Error reading user input")
-			fmt.Println("Error reading input. Please try again.")
-			continue // Ask again
-		}
-
-		choice, err := strconv.Atoi(strings.TrimSpace(response))
-		if err != nil {
-			log.V(1).Info("Invalid input, expected a number.", "input", response)
-			fmt.Println("  Invalid input. Please enter a number.")
-			continue // Ask again
-		}
-
-		if slices.Contains(validChoices, choice) {
-			return choice
-		}
-
-		// If not returned, the choice was invalid
-		log.V(1).Info("Invalid choice entered.", "choice", choice, "validChoices", validChoices)
-		fmt.Printf("  Invalid choice. Please enter one of: %s\n", strings.Join(validStrs, ", "))
-		continue
-	}
 }
