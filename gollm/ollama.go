@@ -29,7 +29,6 @@ const (
 
 type OllamaClient struct {
 	client *api.Client
-	model  string
 }
 
 type OllamaChat struct {
@@ -49,7 +48,6 @@ func NewOllamaClient(ctx context.Context) (*OllamaClient, error) {
 
 	return &OllamaClient{
 		client: client,
-		model:  defaultOllamaModel,
 	}, nil
 }
 
@@ -57,14 +55,9 @@ func (c *OllamaClient) Close() error {
 	return nil
 }
 
-func (c *OllamaClient) SetModel(model string) error {
-	c.model = model
-	return nil
-}
-
 func (c *OllamaClient) GenerateCompletion(ctx context.Context, request *CompletionRequest) (CompletionResponse, error) {
 	req := &api.GenerateRequest{
-		Model:  c.model,
+		Model:  request.Model,
 		Prompt: request.Prompt,
 		Stream: ptrTo(false),
 	}
@@ -102,10 +95,10 @@ func (c *OllamaClient) SetResponseSchema(schema *Schema) error {
 	return nil
 }
 
-func (c *OllamaClient) StartChat(systemPrompt string) Chat {
+func (c *OllamaClient) StartChat(systemPrompt, model string) Chat {
 	return &OllamaChat{
 		client: c.client,
-		model:  c.model,
+		model:  model,
 		history: []api.Message{
 			{
 				Role:    "system",

@@ -67,18 +67,13 @@ func NewVertexAIClient(ctx context.Context) (*VertexAIClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("building vertexai client: %w", err)
 	}
-	model := vertexaiDefaultModel
-	return &VertexAIClient{
-		client: client,
-		model:  model,
-	}, nil
+	return &VertexAIClient{client: client}, nil
 }
 
 // VertexAIClient is a client for the VertexAI API.
 // It implements the Client interface.
 type VertexAIClient struct {
 	client *genai.Client
-	model  string
 
 	// responseSchema will constrain the output to match the given schema
 	responseSchema *genai.Schema
@@ -91,11 +86,9 @@ func (c *VertexAIClient) Close() error {
 	return c.client.Close()
 }
 
-// SetModel sets the model to use for the client.
-func (c *VertexAIClient) SetModel(model string) error {
-	c.model = model
-	// TODO: validate model
-	return nil
+// ListModels lists the models available in the VertexAI API.
+func (c *VertexAIClient) ListModels(ctx context.Context) ([]string, error) {
+	return nil, fmt.Errorf("listing models not supported yet for vertexai")
 }
 
 // SetResponseSchema constrains LLM responses to match the provided schema.
@@ -118,7 +111,7 @@ func (c *VertexAIClient) SetResponseSchema(responseSchema *Schema) error {
 func (c *VertexAIClient) GenerateCompletion(ctx context.Context, request *CompletionRequest) (CompletionResponse, error) {
 	log := klog.FromContext(ctx)
 
-	model := c.client.GenerativeModel(c.model)
+	model := c.client.GenerativeModel(request.Model)
 
 	if c.responseSchema != nil {
 		model.ResponseSchema = c.responseSchema
@@ -160,8 +153,8 @@ func (c *VertexAIClient) GenerateCompletion(ctx context.Context, request *Comple
 }
 
 // StartChat starts a new chat with the model.
-func (c *VertexAIClient) StartChat(systemPrompt string) Chat {
-	model := c.client.GenerativeModel(c.model)
+func (c *VertexAIClient) StartChat(systemPrompt, aiModel string) Chat {
+	model := c.client.GenerativeModel(aiModel)
 
 	// Some values that are recommended by aistudio
 	model.SetTemperature(1)

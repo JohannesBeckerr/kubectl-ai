@@ -25,7 +25,7 @@ type Client interface {
 	io.Closer
 
 	// StartChat starts a new multi-turn chat with a language model.
-	StartChat(systemPrompt string) Chat
+	StartChat(systemPrompt, model string) Chat
 
 	// GenerateCompletion generates a single completion for a given prompt.
 	GenerateCompletion(ctx context.Context, req *CompletionRequest) (CompletionResponse, error)
@@ -34,8 +34,8 @@ type Client interface {
 	// Calling with nil will clear the current schema.
 	SetResponseSchema(schema *Schema) error
 
-	// SetModel sets the model to use for the LLM.
-	SetModel(model string) error
+	// ListModels lists the models available in the LLM.
+	ListModels(ctx context.Context) ([]string, error)
 }
 
 // Chat is an active conversation with a language model.
@@ -53,6 +53,7 @@ type Chat interface {
 
 // CompletionRequest is a request to generate a completion for a given prompt.
 type CompletionRequest struct {
+	Model  string `json:"model,omitempty"`
 	Prompt string `json:"prompt,omitempty"`
 }
 

@@ -40,6 +40,7 @@ type Conversation struct {
 
 	// PromptTemplateFile allows specifying a custom template file
 	PromptTemplateFile string
+	Model              string
 
 	RemoveWorkDir bool
 
@@ -82,7 +83,7 @@ func (s *Conversation) Init(ctx context.Context, u ui.UI) error {
 	}
 
 	// Start a new chat session
-	llmChat := s.LLM.StartChat(systemPrompt)
+	llmChat := s.LLM.StartChat(systemPrompt, s.Model)
 
 	if !s.EnableToolUseShim {
 		var functionDefinitions []*gollm.FunctionDefinition

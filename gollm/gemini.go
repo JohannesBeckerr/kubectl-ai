@@ -56,7 +56,6 @@ func NewGeminiClient(ctx context.Context) (*GeminiClient, error) {
 // It implements the Client interface.
 type GeminiClient struct {
 	client *genai.Client
-	model  string
 
 	// responseSchema will constrain the output to match the given schema
 	responseSchema *genai.Schema
@@ -77,13 +76,6 @@ func (c *GeminiClient) ListModels(ctx context.Context) (modelNames []string, err
 
 // Close frees the resources used by the client.
 func (c *GeminiClient) Close() error {
-	return nil
-}
-
-// SetModel sets the model to use for the client.
-func (c *GeminiClient) SetModel(model string) error {
-	c.model = model
-	// TODO: validate model
 	return nil
 }
 
@@ -121,7 +113,7 @@ func (c *GeminiClient) GenerateCompletion(ctx context.Context, request *Completi
 	}
 
 	log.Info("sending GenerateContent request to gemini", "content", content)
-	result, err := c.client.Models.GenerateContent(ctx, c.model, content, config)
+	result, err := c.client.Models.GenerateContent(ctx, request.Model, content, config)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +122,7 @@ func (c *GeminiClient) GenerateCompletion(ctx context.Context, request *Completi
 }
 
 // StartChat starts a new chat with the model.
-func (c *GeminiClient) StartChat(systemPrompt string) Chat {
+func (c *GeminiClient) StartChat(systemPrompt string, model string) Chat {
 	// Some values that are recommended by aistudio
 	temperature := float32(1.0)
 	topK := float32(40)
@@ -138,7 +130,7 @@ func (c *GeminiClient) StartChat(systemPrompt string) Chat {
 	maxOutputTokens := int32(8192)
 
 	chat := &GeminiChat{
-		model:  c.model,
+		model:  model,
 		client: c.client,
 		genConfig: &genai.GenerateContentConfig{
 			SystemInstruction: &genai.Content{
@@ -155,7 +147,7 @@ func (c *GeminiClient) StartChat(systemPrompt string) Chat {
 		history: []*genai.Content{},
 	}
 
-	if c.model == "gemma-3-27b-it" {
+	if chat.model == "gemma-3-27b-it" {
 		// Note: gemma-3-27b-it does not allow system prompt
 		// xref: https://discuss.ai.google.dev/t/gemma-3-missing-features-despite-announcement/71692
 		// TODO: remove this hack once gemma-3-27b-it supports system prompt
@@ -249,14 +241,11 @@ func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, e
 	log := klog.FromContext(ctx)
 	log.V(1).Info("sending LLM request", "user", contents)
 
-	genaiContent := &genai.Content{
-		Role:  "user",
-		Parts: []*genai.Part{},
-	}
+	genaiContent := &genai.Content{Role: "user"}
 	for _, content := range contents {
 		switch v := content.(type) {
 		case string:
-			genaiContent.Parts = append(genaiContent.Parts, &genai.Part{Text: v})
+			genaiContent.Parts = append(genaiContent.Parts, genai.NewPartFromText(v))
 		case FunctionCallResult:
 			genaiContent.Parts = append(genaiContent.Parts, &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
@@ -273,6 +262,9 @@ func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, e
 	result, err := c.client.Models.GenerateContent(ctx, c.model, c.history, c.genConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate content: %w", err)
+	}
+	if result == nil || len(result.Candidates) == 0 {
+		return nil, fmt.Errorf("no response from Gemini")
 	}
 	c.history = append(c.history, result.Candidates[0].Content)
 	geminiResponse := result

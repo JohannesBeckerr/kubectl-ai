@@ -32,8 +32,6 @@ import (
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/yaml"
 )
@@ -210,64 +208,11 @@ func run(ctx context.Context) error {
 
 	klog.Info("Application started", "pid", os.Getpid())
 
-	var llmClient gollm.Client
-	var err error
-
-	availableModels := []string{"unknown"}
-	switch opt.ProviderID {
-	case "gemini":
-		geminiClient, err := gollm.NewGeminiClient(ctx)
-		if err != nil {
-			return fmt.Errorf("creating gemini client: %w", err)
-		}
-		defer geminiClient.Close()
-		llmClient = geminiClient
-
-		modelNames, err := geminiClient.ListModels(ctx)
-		if err != nil {
-			return fmt.Errorf("listing gemini models: %w", err)
-		}
-		availableModels = modelNames
-
-	case "vertexai":
-		vertexAIClient, err := gollm.NewVertexAIClient(ctx)
-		if err != nil {
-			return fmt.Errorf("creating vertexai client: %w", err)
-		}
-		defer vertexAIClient.Close()
-		llmClient = vertexAIClient
-
-	case "ollama":
-		ollamaClient, err := gollm.NewOllamaClient(ctx)
-		if err != nil {
-			return fmt.Errorf("creating ollama client: %w", err)
-		}
-		defer ollamaClient.Close()
-		llmClient = ollamaClient
-
-		modelNames, err := ollamaClient.ListModels(ctx)
-		if err != nil {
-			return fmt.Errorf("listing ollama models: %w", err)
-		}
-		availableModels = modelNames
-	case "llamacpp":
-		llamacppClient, err := gollm.NewLlamaCppClient(ctx)
-		if err != nil {
-			return fmt.Errorf("creating llama.cpp client: %w", err)
-		}
-		defer llamacppClient.Close()
-		llmClient = llamacppClient
-
-		// Does not support models
-		availableModels = nil
-	default:
-		return fmt.Errorf("invalid language model provider: %s", opt.ProviderID)
-	}
-
-	err = llmClient.SetModel(opt.ModelID)
+	llmClient, err := gollm.NewClient(ctx, opt.ProviderID)
 	if err != nil {
-		return fmt.Errorf("setting model: %w", err)
+		return fmt.Errorf("creating llm client: %w", err)
 	}
+	defer llmClient.Close()
 
 	var recorder journal.Recorder
 	if *tracePath != "" {
@@ -289,6 +234,7 @@ func run(ctx context.Context) error {
 	}
 
 	conversation := &agent.Conversation{
+		Model:               opt.ModelID,
 		Kubeconfig:          kubeconfigPath,
 		LLM:                 llmClient,
 		MaxIterations:       *maxIterations,
@@ -306,19 +252,36 @@ func run(ctx context.Context) error {
 	}
 	defer conversation.Close()
 
+	chatSession := session{
+		model:        opt.ModelID,
+		ui:           u,
+		conversation: conversation,
+		LLM:          llmClient,
+	}
+
 	if queryFromCmd != "" {
 		query := queryFromCmd
 
-		return conversation.RunOneRound(ctx, query)
+		return chatSession.answerQuery(ctx, query)
 	}
 
-	chatSession := session{
-		Model: opt.ModelID,
-	}
+	return chatSession.repl(ctx)
+}
 
-	u.RenderOutput(ctx, "Hey there, what can I help you with today?\n", ui.Foreground(ui.ColorRed))
+// session represents the user chat session (interactive/non-interactive both)
+type session struct {
+	model           string
+	ui              *ui.TerminalUI
+	conversation    *agent.Conversation
+	availableModels []string
+	LLM             gollm.Client
+}
+
+// repl is a read-eval-print loop for the chat session.
+func (s *session) repl(ctx context.Context) error {
+	s.ui.RenderOutput(ctx, "Hey there, what can I help you with today?\n", ui.Foreground(ui.ColorRed))
 	for {
-		u.RenderOutput(ctx, "\n>> ")
+		s.ui.RenderOutput(ctx, "\n>> ")
 		reader := bufio.NewReader(os.Stdin)
 		query, err := reader.ReadString('\n')
 		if err != nil {
@@ -335,127 +298,49 @@ func run(ctx context.Context) error {
 		case query == "":
 			continue
 		case query == "reset":
-			err = conversation.Init(ctx, u)
+			err = s.conversation.Init(ctx, s.ui)
 			if err != nil {
 				return err
 			}
-			u.ClearScreen()
 		case query == "clear":
-			u.ClearScreen()
+			s.ui.ClearScreen()
 		case query == "exit" || query == "quit":
-			u.RenderOutput(ctx, "Allright...bye.\n")
+			s.ui.RenderOutput(ctx, "Allright...bye.\n")
 			return nil
-		case query == "models":
-			u.RenderOutput(ctx, "\n  Available models:\n", ui.Foreground(ui.ColorGreen))
-			u.RenderOutput(ctx, strings.Join(availableModels, "\n"), ui.RenderMarkdown())
-		case strings.HasPrefix(query, "model"):
-			parts := strings.Split(query, " ")
-			if len(parts) > 2 {
-				u.RenderOutput(ctx, "Invalid model command. expected format: model <model-name>", ui.Foreground(ui.ColorRed))
-				continue
-			}
-			if len(parts) == 1 {
-				u.RenderOutput(ctx, fmt.Sprintf("Current model is `%s`\n", chatSession.Model), ui.RenderMarkdown())
-				continue
-			}
-			chatSession.Model = parts[1]
-			_ = llmClient.SetModel(chatSession.Model)
-			u.RenderOutput(ctx, fmt.Sprintf("Model set to `%s`\n", chatSession.Model), ui.RenderMarkdown())
-		case query == "version":
-			u.RenderOutput(ctx, fmt.Sprintf("Client version: `%s`\n", Version), ui.RenderMarkdown())
 		default:
-			if err := conversation.RunOneRound(ctx, query); err != nil {
-				return err
+			if err := s.answerQuery(ctx, query); err != nil {
+				s.ui.RenderOutput(ctx, fmt.Sprintf("Error: %v\n", err), ui.Foreground(ui.ColorRed))
 			}
 		}
 	}
 }
 
-// session represents each the chat session.
-type session struct {
-	Model string `json:"model"`
+func (s *session) listModels(ctx context.Context) ([]string, error) {
+	if s.availableModels == nil {
+		modelNames, err := s.LLM.ListModels(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing models: %w", err)
+		}
+		s.availableModels = modelNames
+	}
+	return s.availableModels, nil
 }
 
-type kubectlMCPServer struct {
-	kubectlConfig string
-	server        *server.MCPServer
-	tools         tools.Tools
-	workDir       string
-}
-
-func newKubectlMCPServer(ctx context.Context, kubectlConfig string, tools tools.Tools, workDir string) (*kubectlMCPServer, error) {
-	s := &kubectlMCPServer{
-		kubectlConfig: kubectlConfig,
-		workDir:       workDir,
-		server: server.NewMCPServer(
-			"kubectl-ai",
-			"0.0.1",
-			server.WithToolCapabilities(true),
-		),
-		tools: tools,
+func (s *session) answerQuery(ctx context.Context, query string) error {
+	switch {
+	case query == "model":
+		s.ui.RenderOutput(ctx, fmt.Sprintf("Current model is `%s`\n", s.model), ui.RenderMarkdown())
+	case query == "version":
+		s.ui.RenderOutput(ctx, fmt.Sprintf("Client version: `%s`\n", Version), ui.RenderMarkdown())
+	case query == "models":
+		models, err := s.listModels(ctx)
+		if err != nil {
+			return fmt.Errorf("listing models: %w", err)
+		}
+		s.ui.RenderOutput(ctx, "\n  Available models:\n", ui.Foreground(ui.ColorGreen))
+		s.ui.RenderOutput(ctx, strings.Join(models, "\n"), ui.RenderMarkdown())
+	default:
+		return s.conversation.RunOneRound(ctx, query)
 	}
-	for _, tool := range s.tools.AllTools() {
-		toolDefn := tool.FunctionDefinition()
-		s.server.AddTool(mcp.NewTool(
-			toolDefn.Name,
-			mcp.WithDescription(toolDefn.Description),
-			mcp.WithString("command", mcp.Description(toolDefn.Parameters.Properties["command"].Description)),
-			mcp.WithString("modifies_resource", mcp.Description(toolDefn.Parameters.Properties["modifies_resource"].Description)),
-		), s.handleToolCall)
-	}
-	return s, nil
-}
-func (s *kubectlMCPServer) Serve(ctx context.Context) error {
-	return server.ServeStdio(s.server)
-}
-
-func (s *kubectlMCPServer) handleToolCall(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-
-	log := klog.FromContext(ctx)
-
-	name := request.Params.Name
-	command := request.Params.Arguments["command"].(string)
-	modifiesResource := request.Params.Arguments["modifies_resource"].(string)
-	log.Info("Received tool call", "tool", name, "command", command, "modifies_resource", modifiesResource)
-
-	ctx = context.WithValue(ctx, "kubeconfig", s.kubectlConfig)
-	ctx = context.WithValue(ctx, "work_dir", s.workDir)
-
-	tool := tools.Lookup(name)
-	if tool == nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				mcp.TextContent{
-					Type: "text",
-					Text: fmt.Sprintf("Error: Tool %s not found", name),
-				},
-			},
-		}, nil
-	}
-	output, err := tool.Run(ctx, map[string]any{
-		"command": command,
-	})
-	if err != nil {
-		log.Error(err, "Error running tool call")
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				mcp.TextContent{
-					Type: "text",
-					Text: fmt.Sprintf("Error: %v", err),
-				},
-			},
-			IsError: true,
-		}, nil
-	}
-
-	log.Info("Tool call output", "tool", name, "output", output)
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			mcp.TextContent{
-				Type: "text",
-				Text: output.(string),
-			},
-		},
-	}, nil
+	return nil
 }

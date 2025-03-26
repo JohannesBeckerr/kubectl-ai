@@ -64,11 +64,6 @@ func (c *LlamaCppClient) Close() error {
 	return nil
 }
 
-func (c *LlamaCppClient) SetModel(model string) error {
-	klog.Errorf("model switching not supported for llama.cpp")
-	return nil
-}
-
 func (c *LlamaCppClient) GenerateCompletion(ctx context.Context, request *CompletionRequest) (CompletionResponse, error) {
 	llamacppRequest := &llamacppCompletionRequest{
 		Prompt:     request.Prompt,
@@ -149,9 +144,10 @@ func (c *LlamaCppClient) SetResponseSchema(responseSchema *Schema) error {
 	return nil
 }
 
-func (c *LlamaCppClient) StartChat(systemPrompt string) Chat {
+func (c *LlamaCppClient) StartChat(systemPrompt, model string) Chat {
 	return &LlamaCppChat{
 		client: c,
+		model:  model,
 		history: []llamacppChatMessage{
 			{
 				Role:    "system",

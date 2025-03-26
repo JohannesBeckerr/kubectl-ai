@@ -21,18 +21,21 @@ import (
 	"os"
 )
 
-// NewClient builds an Client based on the LLM_CLIENT env var
-func NewClient(ctx context.Context) (Client, error) {
-	s := os.Getenv("LLM_CLIENT")
-	if s == "" {
-		return nil, fmt.Errorf("LLM_CLIENT is not set")
-	}
-	u, err := url.Parse(s)
-	if err != nil {
-		return nil, fmt.Errorf("parsing LLM_CLIENT URL: %w", err)
+// NewClient builds an Client based on the LLM_CLIENT env var or the provided providerID. ProviderID (if not empty) overrides the provider from LLM_CLIENT env var.
+func NewClient(ctx context.Context, providerID string) (Client, error) {
+	if providerID == "" {
+		s := os.Getenv("LLM_CLIENT")
+		if s == "" {
+			return nil, fmt.Errorf("LLM_CLIENT is not set")
+		}
+		u, err := url.Parse(s)
+		if err != nil {
+			return nil, fmt.Errorf("parsing LLM_CLIENT URL: %w", err)
+		}
+		providerID = u.Scheme
 	}
 
-	switch u.Scheme {
+	switch providerID {
 	case "gemini":
 		return NewGeminiClient(ctx)
 	case "vertexai":
@@ -42,6 +45,6 @@ func NewClient(ctx context.Context) (Client, error) {
 	case "llamacpp":
 		return NewLlamaCppClient(ctx)
 	default:
-		return nil, fmt.Errorf("unknown LLM_CLIENT scheme %q", u.Scheme)
+		return nil, fmt.Errorf("unknown LLM_CLIENT scheme %q", providerID)
 	}
 }
