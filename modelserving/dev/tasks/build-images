@@ -37,16 +37,28 @@ if [[ -z "${BUILDX_ARGS:-}" ]]; then
   BUILDX_ARGS="--load"
 fi
 
-if build_for_architecture cpu; then
-  docker buildx build \
-    -f images/llamacpp-server/Dockerfile \
-    --target llamacpp-server \
-    -t llamacpp-server-cpu:${TAG} \
-    --build-arg BASE_IMAGE=debian:latest \
-    --build-arg BUILDER_IMAGE=debian:latest \
-    --build-arg "CMAKE_ARGS=-DGGML_RPC=ON" \
-    --progress=plain .
-fi
+# Build a blobserver that can be used to cache models in GCS
+docker buildx build ${BUILDX_ARGS} \
+  -f images/blobserver/Dockerfile \
+  -t ${IMAGE_PREFIX}blobserver:${TAG} \
+  --progress=plain .
+
+# The frontend builds on a CPU image, it does not serve models so does not need CUDA
+docker buildx build \
+  -f images/llamacpp-server/Dockerfile \
+  --target llamacpp-server \
+  -t llamacpp-server-cpu:${TAG} \
+  --build-arg BASE_IMAGE=debian:latest \
+  --build-arg BUILDER_IMAGE=debian:latest \
+  --build-arg "CMAKE_ARGS=-DGGML_RPC=ON" \
+  --progress=plain .
+
+# The frontend (CPU only)
+docker buildx build ${BUILDX_ARGS} \
+  -f images/llamacpp-frontend/Dockerfile \
+  -t ${IMAGE_PREFIX}llamacpp-frontend:${TAG} \
+  --build-arg BASE_IMAGE=llamacpp-server-cpu:${TAG} \
+  --progress=plain .
 
 # Build a worker node that runs rpc-server with CPU support
 if build_for_architecture cpu; then
