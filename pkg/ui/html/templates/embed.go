@@ -12,36 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ui
+package templates
 
-type UI interface {
-	// ClearScreen clears any output rendered to the screen
-	ClearScreen()
-}
-
-type ComputedStyle struct {
-	Foreground     ColorValue
-	RenderMarkdown bool
-}
-
-type ColorValue string
-
-const (
-	ColorGreen ColorValue = "green"
-	ColorWhite            = "white"
-	ColorRed              = "red"
+import (
+	"embed"
+	"fmt"
+	"html/template"
 )
 
-type StyleOption func(s *ComputedStyle)
+//go:embed *.html
+var htmlFiles embed.FS
 
-func Foreground(color ColorValue) StyleOption {
-	return func(s *ComputedStyle) {
-		s.Foreground = color
+func LoadTemplate(key string) (*template.Template, error) {
+	// TODO: Caching
+	b, err := htmlFiles.ReadFile(key)
+	if err != nil {
+		return nil, fmt.Errorf("reading %q: %w", key, err)
 	}
-}
 
-func RenderMarkdown() StyleOption {
-	return func(s *ComputedStyle) {
-		s.RenderMarkdown = true
+	tmpl, err := template.New(key).Parse(string(b))
+	if err != nil {
+		return nil, fmt.Errorf("parsing %q: %w", key, err)
 	}
+	return tmpl, nil
 }
