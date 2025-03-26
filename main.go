@@ -54,6 +54,7 @@ func main() {
 	go func() {
 		sig := <-sigCh
 		fmt.Fprintf(os.Stderr, "Received signal, shutting down... %s\n", sig)
+		klog.Flush()
 		os.Exit(0)
 	}()
 
@@ -167,6 +168,8 @@ func run(ctx context.Context) error {
 	flag.Set("log_file", "/tmp/kubectl-ai.log")
 
 	flag.Parse()
+
+	defer klog.Flush()
 
 	// Handle kubeconfig with priority: command-line arg > env var > default path
 	kubeconfigPath := *kubeconfig
