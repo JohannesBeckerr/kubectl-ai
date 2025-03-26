@@ -3,7 +3,7 @@ apiVersion: v1
 metadata:
   name: rpc-server
 
----
+# ---
 
 kind: Service
 apiVersion: v1
