@@ -16,6 +16,7 @@ package ui
 
 import (
 	"io"
+	"slices"
 	"sync"
 )
 
@@ -24,15 +25,24 @@ type Document struct {
 	subscriptions []*subscription
 	nextID        uint64
 
-	Blocks []Block
+	blocks []Block
+}
+
+func (d *Document) Blocks() []Block {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	return d.blocks
 }
 
 func (d *Document) NumBlocks() int {
-	return len(d.Blocks)
+	return len(d.Blocks())
 }
 
 func (d *Document) IndexOf(find Block) int {
-	for i, b := range d.Blocks {
+	blocks := d.Blocks()
+
+	for i, b := range blocks {
 		if b == find {
 			return i
 		}
@@ -81,23 +91,26 @@ func (d *Document) AddSubscription(subscriber Subscriber) io.Closer {
 		id:         id,
 		subscriber: subscriber,
 	}
-	for i, s := range d.subscriptions {
-		if s == nil {
-			d.subscriptions[i] = s
-			return s
+
+	newSubscriptions := make([]*subscription, 0, len(d.subscriptions)+1)
+	for _, s := range d.subscriptions {
+		if s == nil || s.subscriber == nil {
+			continue
 		}
+		newSubscriptions = append(newSubscriptions, s)
 	}
-	d.subscriptions = append(d.subscriptions, s)
+	newSubscriptions = append(newSubscriptions, s)
+	d.subscriptions = newSubscriptions
 	return s
 }
 
-func (d *Document) sendDocumentChangedHoldingLock(b Block) {
-	for i, s := range d.subscriptions {
-		if s == nil {
-			continue
-		}
-		if s.subscriber == nil {
-			d.subscriptions[i] = nil
+func (d *Document) sendDocumentChanged(b Block) {
+	d.mutex.Lock()
+	subscriptions := d.subscriptions
+	d.mutex.Unlock()
+
+	for _, s := range subscriptions {
+		if s == nil || s.subscriber == nil {
 			continue
 		}
 
@@ -107,12 +120,17 @@ func (d *Document) sendDocumentChangedHoldingLock(b Block) {
 
 func (d *Document) AddBlock(block Block) {
 	d.mutex.Lock()
-	defer d.mutex.Unlock()
 
-	d.Blocks = append(d.Blocks, block)
+	// Copy-on-write to minimize locking
+	newBlocks := slices.Clone(d.blocks)
+	newBlocks = append(newBlocks, block)
+	d.blocks = newBlocks
+
 	block.attached(d)
 
-	d.sendDocumentChangedHoldingLock(block)
+	d.mutex.Unlock()
+
+	d.sendDocumentChanged(block)
 }
 
 func (d *Document) blockChanged(block Block) {
@@ -120,8 +138,5 @@ func (d *Document) blockChanged(block Block) {
 		return
 	}
 
-	d.mutex.Lock()
-	defer d.mutex.Unlock()
-
-	d.sendDocumentChangedHoldingLock(block)
+	d.sendDocumentChanged(block)
 }

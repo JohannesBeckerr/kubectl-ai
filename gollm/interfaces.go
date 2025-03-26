@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"iter"
 )
 
 // Client is a client for a language model.
@@ -46,6 +47,9 @@ type Chat interface {
 	// Note that this method automatically updates the state of the Chat,
 	// you do not need to "replay" any messages from the LLM.
 	Send(ctx context.Context, contents ...any) (ChatResponse, error)
+
+	// SendStreaming is the streaming verison of Send.
+	SendStreaming(ctx context.Context, contents ...any) (ChatResponseIterator, error)
 
 	// SetFunctionDefinitions configures the set of tools (functions) available to the LLM
 	// for function calling.
@@ -126,7 +130,7 @@ type FunctionCallResult struct {
 	Result map[string]any `json:"result,omitempty"`
 }
 
-// Response is a generic chat response from the LLM.
+// ChatResponse is a generic chat response from the LLM.
 type ChatResponse interface {
 	UsageMetadata() any
 
@@ -134,6 +138,9 @@ type ChatResponse interface {
 	// The LLM may return multiple candidates, and we can choose the best one.
 	Candidates() []Candidate
 }
+
+// ChatResponseIterator is a streaming chat response from the LLM.
+type ChatResponseIterator iter.Seq2[ChatResponse, error]
 
 // Candidate is one of a set of candidate response from the LLM.
 type Candidate interface {

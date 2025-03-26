@@ -151,28 +151,17 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 			Payload:   []any{currChatContent},
 		})
 
-		response, err := a.llmChat.Send(ctx, currChatContent...)
+		stream, err := a.llmChat.SendStreaming(ctx, currChatContent...)
 		if err != nil {
 			return err
 		}
 
-		a.Recorder.Write(ctx, &journal.Event{
-			Timestamp: time.Now(),
-			Action:    "llm-response",
-			Payload:   response,
-		})
-
+		// Clear our "response" now that we sent the last response
 		currChatContent = nil
-
-		if len(response.Candidates()) == 0 {
-			return fmt.Errorf("no candidates in LLM response")
-		}
-
-		candidate := response.Candidates()[0]
 
 		if a.EnableToolUseShim {
 			// convert the candidate response into a gollm.ChatResponse
-			candidate, err = candidateToShimCandidate(candidate)
+			stream, err = candidateToShimCandidate(stream)
 			if err != nil {
 				return err
 			}
@@ -182,95 +171,118 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 		// only applicable is not using tooluse shim
 		var functionCalls []gollm.FunctionCall
 
-		for _, part := range candidate.Parts() {
-			// Check if it's a text response
-			if text, ok := part.AsText(); ok {
-				log.Info("text response", "text", text)
-				textResponse := text
-				// If we have a text response, render it
-				if textResponse != "" {
-					a.doc.AddBlock(ui.NewAgentTextBlock().SetText(textResponse))
-				}
+		var agentTextBlock *ui.AgentTextBlock
+
+		for response, err := range stream {
+			if err != nil {
+				return fmt.Errorf("reading streaming LLM response: %w", err)
+			}
+			if response == nil {
+				// end of streaming response
+				break
+			}
+			klog.Infof("response: %+v", response)
+			a.Recorder.Write(ctx, &journal.Event{
+				Timestamp: time.Now(),
+				Action:    "llm-response",
+				Payload:   response,
+			})
+
+			if len(response.Candidates()) == 0 {
+				log.Error(nil, "No candidates in response")
+				return fmt.Errorf("no candidates in LLM response")
 			}
 
-			// Check if it's a function call
-			if calls, ok := part.AsFunctionCalls(); ok && len(calls) > 0 {
-				log.Info("function calls", "calls", calls)
-				functionCalls = append(functionCalls, calls...)
+			candidate := response.Candidates()[0]
 
-				// TODO(droot): Run all function calls in parallel
-				// (may have to specify in the prompt to make these function calls independent)
-				for _, call := range calls {
-					toolCall, err := a.Tools.ParseToolInvocation(ctx, call.Name, call.Arguments)
-					if err != nil {
-						return fmt.Errorf("building tool call: %w", err)
+			for _, part := range candidate.Parts() {
+				// Check if it's a text response
+				if text, ok := part.AsText(); ok {
+					log.Info("text response", "text", text)
+					if agentTextBlock == nil {
+						agentTextBlock = ui.NewAgentTextBlock()
+						a.doc.AddBlock(agentTextBlock)
 					}
+					agentTextBlock.AppendText(text)
+				}
 
-					s := toolCall.PrettyPrint()
-					a.doc.AddBlock(ui.NewAgentTextBlock().SetText(fmt.Sprintf("  Running: %s\n", s)).SetColor(ui.ColorGreen))
-					// Ask for confirmation only if SkipPermissions is false AND the tool modifies resources.
-					if !a.SkipPermissions && call.Arguments["modifies_resource"] != "no" {
-						confirmationPrompt := `  Do you want to proceed?
+				// Check if it's a function call
+				if calls, ok := part.AsFunctionCalls(); ok && len(calls) > 0 {
+					log.Info("function calls", "calls", calls)
+					functionCalls = append(functionCalls, calls...)
+				}
+			}
+		}
+
+		// TODO(droot): Run all function calls in parallel
+		// (may have to specify in the prompt to make these function calls independent)
+		for _, call := range functionCalls {
+			toolCall, err := a.Tools.ParseToolInvocation(ctx, call.Name, call.Arguments)
+			if err != nil {
+				return fmt.Errorf("building tool call: %w", err)
+			}
+
+			s := toolCall.PrettyPrint()
+			a.doc.AddBlock(ui.NewAgentTextBlock().SetText(fmt.Sprintf("  Running: %s\n", s)).SetColor(ui.ColorGreen))
+			// Ask for confirmation only if SkipPermissions is false AND the tool modifies resources.
+			if !a.SkipPermissions && call.Arguments["modifies_resource"] != "no" {
+				confirmationPrompt := `  Do you want to proceed?
   1) Yes
   2) Yes, and don't ask me again
   3) No`
 
-						optionsBlock := ui.NewInputOptionBlock().SetPrompt(confirmationPrompt)
-						optionsBlock.SetOptions([]string{"1", "2", "3"})
-						a.doc.AddBlock(optionsBlock)
+				optionsBlock := ui.NewInputOptionBlock().SetPrompt(confirmationPrompt)
+				optionsBlock.SetOptions([]string{"1", "2", "3"})
+				a.doc.AddBlock(optionsBlock)
 
-						selectedChoice, err := optionsBlock.Observable().Wait()
-						if err != nil {
-							if err == io.EOF {
-								// Use hit control-D, or was piping and we reached the end of stdin.
-								// Not a "big" problem
-								return nil
-							}
-							return fmt.Errorf("reading input: %w", err)
-						}
-
-						switch selectedChoice {
-						case "1":
-							// Proceed with the operation
-						case "2":
-							a.SkipPermissions = true
-						case "3":
-							a.doc.AddBlock(ui.NewAgentTextBlock().SetText("Operation cancelled by user."))
-							return nil
-						default:
-							// This case should technically not be reachable due to AskForConfirmation loop
-							err := fmt.Errorf("invalid confirmation choice: %q", selectedChoice)
-							log.Error(err, "Invalid choice received from AskForConfirmation")
-							a.doc.AddBlock(ui.NewErrorBlock().SetText("Invalid choice received. Cancelling operation."))
-							return err
-						}
+				selectedChoice, err := optionsBlock.Observable().Wait()
+				if err != nil {
+					if err == io.EOF {
+						// Use hit control-D, or was piping and we reached the end of stdin.
+						// Not a "big" problem
+						return nil
 					}
-
-					ctx := journal.ContextWithRecorder(ctx, a.Recorder)
-					output, err := toolCall.InvokeTool(ctx, tools.InvokeToolOptions{
-						WorkDir: a.workDir,
-					})
-					if err != nil {
-						return fmt.Errorf("executing action: %w", err)
-					}
-
-					if a.EnableToolUseShim {
-						observation := fmt.Sprintf("Result of running %q:\n%s", call.Name, output)
-						currChatContent = append(currChatContent, observation)
-					} else {
-						result, err := tools.ToolResultToMap(output)
-						if err != nil {
-							return err
-						}
-
-						currChatContent = append(currChatContent, gollm.FunctionCallResult{
-							ID:     call.ID,
-							Name:   call.Name,
-							Result: result,
-						})
-					}
+					return fmt.Errorf("reading input: %w", err)
 				}
 
+				switch selectedChoice {
+				case "1":
+					// Proceed with the operation
+				case "2":
+					a.SkipPermissions = true
+				case "3":
+					a.doc.AddBlock(ui.NewAgentTextBlock().SetText("Operation cancelled by user."))
+					return nil
+				default:
+					// This case should technically not be reachable due to AskForConfirmation loop
+					log.Error(fmt.Errorf("unexpected confirmation choice: %q", selectedChoice), "Invalid choice received from AskForConfirmation")
+					a.doc.AddBlock(ui.NewErrorBlock().SetText("Invalid choice received. Cancelling operation."))
+					return fmt.Errorf("invalid confirmation choice: %q", selectedChoice)
+				}
+			}
+
+			ctx := journal.ContextWithRecorder(ctx, a.Recorder)
+			output, err := toolCall.InvokeTool(ctx, tools.InvokeToolOptions{
+				WorkDir: a.workDir,
+			})
+			if err != nil {
+				return fmt.Errorf("executing action: %w", err)
+			}
+
+			if a.EnableToolUseShim {
+				observation := fmt.Sprintf("Result of running %q:\n%s", call.Name, output)
+				currChatContent = append(currChatContent, observation)
+			} else {
+				result, err := tools.ToolResultToMap(output)
+				if err != nil {
+					return err
+				}
+
+				currChatContent = append(currChatContent, gollm.FunctionCallResult{
+					ID:     call.ID,
+					Name:   call.Name,
+					Result: result,
+				})
 			}
 		}
 
@@ -366,20 +378,28 @@ type Action struct {
 	ModifiesResource string `json:"modifies_resource"`
 }
 
+func extractJSON(s string) (string, bool) {
+	const jsonBlockMarker = "```json"
+
+	first := strings.Index(s, jsonBlockMarker)
+	last := strings.LastIndex(s, "```")
+	if first == -1 || last == -1 || first == last {
+		return "", false
+	}
+	data := s[first+len(jsonBlockMarker) : last]
+
+	return data, true
+}
+
 // parseReActResponse parses the LLM response into a ReActResponse struct
 // This function assumes the input contains exactly one JSON code block
 // formatted with ```json and ``` markers. The JSON block is expected to
 // contain a valid ReActResponse object.
 func parseReActResponse(input string) (*ReActResponse, error) {
-	cleaned := strings.TrimSpace(input)
-
-	const jsonBlockMarker = "```json"
-	first := strings.Index(cleaned, jsonBlockMarker)
-	last := strings.LastIndex(cleaned, "```")
-	if first == -1 || last == -1 {
+	cleaned, found := extractJSON(input)
+	if !found {
 		return nil, fmt.Errorf("no JSON code block found in %q", cleaned)
 	}
-	cleaned = cleaned[first+len(jsonBlockMarker) : last]
 
 	cleaned = strings.ReplaceAll(cleaned, "\n", "")
 	cleaned = strings.TrimSpace(cleaned)
@@ -404,17 +424,62 @@ func toMap(v any) (map[string]any, error) {
 	return m, nil
 }
 
-func candidateToShimCandidate(candidate gollm.Candidate) (*ShimCandidate, error) {
-	for _, part := range candidate.Parts() {
-		if text, ok := part.AsText(); ok {
-			parsedReActResp, err := parseReActResponse(text)
+func candidateToShimCandidate(iterator gollm.ChatResponseIterator) (gollm.ChatResponseIterator, error) {
+	return func(yield func(gollm.ChatResponse, error) bool) {
+		buffer := ""
+		for response, err := range iterator {
 			if err != nil {
-				return nil, fmt.Errorf("parsing ReAct response: %w", err)
+				yield(nil, err)
+				return
 			}
-			return &ShimCandidate{candidate: parsedReActResp}, nil
+
+			if len(response.Candidates()) == 0 {
+				yield(nil, fmt.Errorf("no candidates in LLM response"))
+				return
+			}
+
+			candidate := response.Candidates()[0]
+
+			for _, part := range candidate.Parts() {
+				if text, ok := part.AsText(); ok {
+					buffer += text
+					klog.Infof("text is %q", text)
+				} else {
+					yield(nil, fmt.Errorf("no text part found in candidate"))
+					return
+				}
+			}
+
+			if _, found := extractJSON(buffer); found {
+				break
+			}
 		}
-	}
-	return nil, fmt.Errorf("no text part found in candidate")
+
+		if buffer == "" {
+			yield(nil, nil)
+			return
+		}
+
+		parsedReActResp, err := parseReActResponse(buffer)
+		if err != nil {
+			yield(nil, fmt.Errorf("parsing ReAct response %q: %w", buffer, err))
+			return
+		}
+		buffer = "" // TODO: any trailing text?
+		yield(&ShimResponse{candidate: parsedReActResp}, nil)
+	}, nil
+}
+
+type ShimResponse struct {
+	candidate *ReActResponse
+}
+
+func (r *ShimResponse) UsageMetadata() any {
+	return nil
+}
+
+func (r *ShimResponse) Candidates() []gollm.Candidate {
+	return []gollm.Candidate{&ShimCandidate{candidate: r.candidate}}
 }
 
 type ShimCandidate struct {

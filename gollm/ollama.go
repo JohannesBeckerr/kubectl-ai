@@ -193,6 +193,15 @@ func (c *OllamaChat) IsRetryableError(err error) bool {
 	return false
 }
 
+func (c *OllamaChat) SendStreaming(ctx context.Context, contents ...any) (ChatResponseIterator, error) {
+	// TODO: Implement streaming
+	response, err := c.Send(ctx, contents...)
+	if err != nil {
+		return nil, err
+	}
+	return singletonChatResponseIterator(response), nil
+}
+
 type OllamaChatResponse struct {
 	candidates     []*OllamaCandidate
 	ollamaResponse api.ChatResponse
