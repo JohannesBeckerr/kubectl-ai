@@ -41,6 +41,7 @@ var Version = "0.1.0-dev"
 
 // models
 var geminiModels = []string{
+	"gemini-2.5-pro-exp-03-25",
 	"gemini-2.0-flash-thinking-exp-01-21",
 	"gemini-2.0-flash",
 }
@@ -87,7 +88,10 @@ func (o *Options) InitDefaults() {
 	// default to false because our goal is to make the agent truly autonomous by default
 	o.AsksForConfirmation = false
 	o.MCPServer = false
-	o.EnableToolUseShim = true
+
+	// We now default to our strongest model (gemini-2.5-pro-exp-03-25) which supports tool use natively.
+	// so we don't need shim.
+	o.EnableToolUseShim = false
 }
 
 func (o *Options) LoadConfiguration(b []byte) error {
