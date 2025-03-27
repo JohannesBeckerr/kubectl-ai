@@ -75,6 +75,8 @@ func (e *APIError) Unwrap() error {
 }
 
 // IsRetryableFunc defines the signature for functions that check if an error is retryable.
+// TODO (droot): Adjust the signature to allow underlying client to relay the backoff
+// delay etc. for example, Gemini's error codes contain retryDelay information.
 type IsRetryableFunc func(error) bool
 
 // DefaultIsRetryableError provides a default implementation based on common HTTP codes and network errors.
@@ -152,18 +154,18 @@ func Retry[T any](
 		// Check if context was cancelled *after* the operation
 		select {
 		case <-ctx.Done():
-			log.Info("Context cancelled after attempt %d failed.", attempt)
+			log.Info("Context cancelled after attempt %d failed.", "attempt", attempt)
 			return zero, ctx.Err() // Return context error preferentially
 		default:
 			// Context not cancelled, proceed with error checking
 		}
 
 		if !isRetryable(lastErr) {
-			log.Info("Attempt %d failed with non-retryable error: %v", attempt, lastErr)
+			log.Info("Attempt failed with non-retryable error", "attempt", attempt, "error", lastErr)
 			return zero, lastErr // Return the non-retryable error immediately
 		}
 
-		log.Info("Attempt %d failed with retryable error: %v", attempt, lastErr)
+		log.Info("Attempt failed with retryable error", "attempt", attempt, "error", lastErr)
 
 		if attempt == config.MaxAttempts {
 			// Max attempts reached
@@ -176,14 +178,14 @@ func Retry[T any](
 			waitTime += time.Duration(rand.Float64() * float64(backoff) / 2)
 		}
 
-		log.Info("Waiting %v before next attempt (%d/%d)", waitTime, attempt+1, config.MaxAttempts)
+		log.Info("Waiting before next attempt", "waitTime", waitTime, "attempt", attempt+1, "maxAttempts", config.MaxAttempts)
 
 		// Wait or react to context cancellation
 		select {
 		case <-time.After(waitTime):
 			// Wait finished
 		case <-ctx.Done():
-			log.Info("Context cancelled while waiting for retry after attempt %d.", attempt)
+			log.Info("Context cancelled while waiting for retry after attempt %d.", "attempt", attempt)
 			return zero, ctx.Err()
 		}
 
@@ -212,16 +214,11 @@ type retryChat[C Chat] struct {
 func NewRetryChat[C Chat](
 	underlying C,
 	config RetryConfig,
-	isRetryable IsRetryableFunc, // Allow customizing retryability check
 ) Chat {
-	// If no custom retry check provided, use the default
-	if isRetryable == nil {
-		isRetryable = DefaultIsRetryableError
-	}
+
 	return &retryChat[C]{
-		underlying:  underlying,
-		config:      config,
-		isRetryable: isRetryable,
+		underlying: underlying,
+		config:     config,
 	}
 }
 
@@ -233,9 +230,13 @@ func (rc *retryChat[C]) Send(ctx context.Context, contents ...any) (ChatResponse
 	}
 
 	// Execute with retry
-	return Retry[ChatResponse](ctx, rc.config, rc.isRetryable, operation)
+	return Retry[ChatResponse](ctx, rc.config, rc.underlying.IsRetryableError, operation)
 }
 
 func (rc *retryChat[C]) SetFunctionDefinitions(functionDefinitions []*FunctionDefinition) error {
 	return rc.underlying.SetFunctionDefinitions(functionDefinitions)
+}
+
+func (rc *retryChat[C]) IsRetryableError(err error) bool {
+	return rc.underlying.IsRetryableError(err)
 }

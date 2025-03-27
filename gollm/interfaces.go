@@ -49,6 +49,9 @@ type Chat interface {
 	// SetFunctionDefinitions configures the set of tools (functions) available to the LLM
 	// for function calling.
 	SetFunctionDefinitions(functionDefinitions []*FunctionDefinition) error
+
+	// IsRetryableError returns true if the error is retryable.
+	IsRetryableError(error) bool
 }
 
 // CompletionRequest is a request to generate a completion for a given prompt.

@@ -193,6 +193,11 @@ type VertexAIChat struct {
 	chat  *genai.ChatSession
 }
 
+func (c *VertexAIChat) IsRetryableError(err error) bool {
+	// TODO(droot): Implement this
+	return false
+}
+
 // SetFunctionDefinitions sets the function definitions for the chat.
 // This allows the LLM to call user-defined functions.
 func (c *VertexAIChat) SetFunctionDefinitions(functionDefinitions []*FunctionDefinition) error {

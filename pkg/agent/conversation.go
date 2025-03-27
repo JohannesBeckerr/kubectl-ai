@@ -87,11 +87,12 @@ func (s *Conversation) Init(ctx context.Context, u ui.UI) error {
 		s.LLM.StartChat(systemPrompt, s.Model),
 		gollm.RetryConfig{
 			MaxAttempts:    3,
-			InitialBackoff: 1 * time.Second,
-			MaxBackoff:     10 * time.Second,
+			InitialBackoff: 10 * time.Second,
+			MaxBackoff:     60 * time.Second,
 			BackoffFactor:  2,
 			Jitter:         true,
-		}, gollm.DefaultIsRetryableError)
+		},
+	)
 
 	if !s.EnableToolUseShim {
 		var functionDefinitions []*gollm.FunctionDefinition
@@ -149,7 +150,6 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 
 		response, err := a.llmChat.Send(ctx, currChatContent...)
 		if err != nil {
-			log.Error(err, "Error sending initial message")
 			return err
 		}
 
@@ -162,7 +162,6 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 		currChatContent = nil
 
 		if len(response.Candidates()) == 0 {
-			log.Error(nil, "No candidates in response")
 			return fmt.Errorf("no candidates in LLM response")
 		}
 
@@ -172,7 +171,6 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 			// convert the candidate response into a gollm.ChatResponse
 			candidate, err = candidateToShimCandidate(candidate)
 			if err != nil {
-				log.Error(err, "Failed to convert candidate to shim candidate")
 				return err
 			}
 		}

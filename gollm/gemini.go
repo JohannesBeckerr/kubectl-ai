@@ -17,7 +17,10 @@ package gollm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"strings"
 
@@ -32,7 +35,6 @@ const (
 
 // NewGeminiClient builds a client for the Gemini API.
 func NewGeminiClient(ctx context.Context) (*GeminiClient, error) {
-
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
@@ -401,4 +403,43 @@ func (r *GeminiCompletionResponse) UsageMetadata() any {
 
 func (r *GeminiCompletionResponse) String() string {
 	return fmt.Sprintf("{text=%q}", r.text)
+}
+
+func (c *GeminiChat) IsRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var clientErr genai.ClientError
+	if errors.As(err, &clientErr) {
+		switch clientErr.Code {
+		case http.StatusConflict, http.StatusTooManyRequests,
+			http.StatusInternalServerError, http.StatusBadGateway,
+			http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			return true
+		default:
+			return false
+		}
+	}
+
+	var serverErr genai.ServerError
+	if errors.As(err, &serverErr) {
+		switch serverErr.Code {
+		case http.StatusConflict, http.StatusTooManyRequests,
+			http.StatusInternalServerError, http.StatusBadGateway,
+			http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			return true
+		default:
+			return false
+		}
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+
+	// Add other error checks specific to LLM clients if needed
+	// e.g., if errors.Is(err, specificLLMRateLimitError) { return true }
+
+	return false
 }

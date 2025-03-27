@@ -179,6 +179,11 @@ func (c *OllamaChat) Send(ctx context.Context, contents ...any) (ChatResponse, e
 	return ollamaResponse, nil
 }
 
+func (c *OllamaChat) IsRetryableError(err error) bool {
+	// TODO(droot): Implement this
+	return false
+}
+
 type OllamaChatResponse struct {
 	candidates     []*OllamaCandidate
 	ollamaResponse api.ChatResponse

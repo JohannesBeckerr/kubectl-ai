@@ -263,6 +263,11 @@ func (c *LlamaCppChat) Send(ctx context.Context, contents ...any) (ChatResponse,
 	return llmacppResponse, nil
 }
 
+func (c *LlamaCppChat) IsRetryableError(err error) bool {
+	// TODO(droot): Implement this
+	return false
+}
+
 func ptrTo[T any](t T) *T {
 	return &t
 }
