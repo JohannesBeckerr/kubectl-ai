@@ -25,3 +25,5 @@ app.log
 *.prof
 *.out
 .aider*
+# Added by goreleaser init:
+dist/
