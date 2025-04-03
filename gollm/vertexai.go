@@ -19,9 +19,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
+	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/vertexai/genai"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
@@ -44,9 +46,54 @@ func NewVertexAIClient(ctx context.Context) (*VertexAIClient, error) {
 	}
 	opts = append(opts, option.WithCredentials(creds))
 
-	projectID := ""
-	location := "us-central1"
+	// Try to get project ID and location in order of precedence:
+	// 1. From compute metadata (for GCE/GKE environments)
+	// 2. From application default credentials
+	// 3. From environment variables
+	// 4. From gcloud config as last resort
 
+	projectID := ""
+	location := ""
+
+	// 1. Try compute metadata
+	metadataClient := metadata.NewClient(nil)
+	if metadataClient != nil {
+		if id, err := metadataClient.ProjectIDWithContext(ctx); err == nil && id != "" {
+			projectID = id
+			log.Info("got project from compute metadata", "project", projectID)
+		}
+		if loc, err := metadataClient.ZoneWithContext(ctx); err == nil && loc != "" {
+			// Convert zone to region by removing the last character
+			location = loc[:len(loc)-2]
+			log.Info("got location from compute metadata", "location", location)
+		}
+	}
+
+	// 2. Try application default credentials
+	if projectID == "" && creds.ProjectID != "" {
+		projectID = creds.ProjectID
+		log.Info("got project from application default credentials", "project", projectID)
+	}
+
+	// 3. Try environment variables
+	if projectID == "" {
+		if id := os.Getenv("GOOGLE_CLOUD_PROJECT"); id != "" {
+			projectID = id
+			log.Info("got project from GOOGLE_CLOUD_PROJECT environment variable", "project", projectID)
+		} else if id := os.Getenv("GCLOUD_PROJECT"); id != "" {
+			projectID = id
+			log.Info("got project from GCLOUD_PROJECT environment variable", "project", projectID)
+		}
+	}
+
+	if location == "" {
+		if loc := os.Getenv("GOOGLE_CLOUD_LOCATION"); loc != "" {
+			location = loc
+			log.Info("got location from GOOGLE_CLOUD_LOCATION environment variable", "location", location)
+		}
+	}
+
+	// 4. Try gcloud config as last resort
 	if projectID == "" {
 		cmd := exec.CommandContext(ctx, "gcloud", "config", "get", "project")
 		var stdout bytes.Buffer
@@ -59,6 +106,24 @@ func NewVertexAIClient(ctx context.Context) (*VertexAIClient, error) {
 			return nil, fmt.Errorf("project was not set in gcloud config")
 		}
 		log.Info("got project from gcloud config", "project", projectID)
+	}
+
+	if location == "" {
+		cmd := exec.CommandContext(ctx, "gcloud", "config", "get", "compute/region")
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+		if err := cmd.Run(); err == nil {
+			location = strings.TrimSpace(stdout.String())
+			if location != "" {
+				log.Info("got location from gcloud config", "location", location)
+			}
+		}
+	}
+
+	// Default to us-central1 if no location is found
+	if location == "" {
+		location = "us-central1"
+		log.Info("using default location", "location", location)
 	}
 
 	// TODO: Detect and/or auto-enable "gcloud services enable aiplatform.googleapis.com" if not enabled?
