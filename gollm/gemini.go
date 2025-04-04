@@ -50,18 +50,8 @@ func NewGeminiClient(ctx context.Context, backend string) (*GeminiClient, error)
 			Backend: genai.BackendGeminiAPI,
 		}
 	case vertexaiBackend:
-		project := os.Getenv("GOOGLE_CLOUD_PROJECT")
-		location := os.Getenv("GOOGLE_CLOUD_LOCATION")
-		if project == "" {
-			return nil, fmt.Errorf("GOOGLE_CLOUD_PROJECT environment variable not set")
-		}
-		if location == "" {
-			location = "us-central1"
-		}
 		cc = &genai.ClientConfig{
-			Backend:  genai.BackendVertexAI,
-			Project:  project,
-			Location: location,
+			Backend: genai.BackendVertexAI,
 		}
 	default:
 		return nil, fmt.Errorf("unknown backend %q", backend)
