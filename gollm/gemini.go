@@ -191,20 +191,22 @@ type GeminiChat struct {
 // SetFunctionDefinitions sets the function definitions for the chat.
 // This allows the LLM to call user-defined functions.
 func (c *GeminiChat) SetFunctionDefinitions(functionDefinitions []*FunctionDefinition) error {
+	var genaiFunctionDeclarations []*genai.FunctionDeclaration
 	for _, functionDefinition := range functionDefinitions {
 		parameters, err := toGeminiSchema(functionDefinition.Parameters)
 		if err != nil {
 			return err
 		}
-		c.genConfig.Tools = append(c.genConfig.Tools, &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{
-				{
-					Name:        functionDefinition.Name,
-					Description: functionDefinition.Description,
-					Parameters:  parameters,
-				},
-			},
+		genaiFunctionDeclarations = append(genaiFunctionDeclarations, &genai.FunctionDeclaration{
+			Name:        functionDefinition.Name,
+			Description: functionDefinition.Description,
+			Parameters:  parameters,
 		})
+	}
+	c.genConfig.Tools = []*genai.Tool{
+		{
+			FunctionDeclarations: genaiFunctionDeclarations,
+		},
 	}
 	return nil
 }
