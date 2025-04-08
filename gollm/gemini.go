@@ -46,7 +46,9 @@ func NewGeminiClient(ctx context.Context, backend string) (*GeminiClient, error)
 			return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
 		}
 		cc = &genai.ClientConfig{
-			APIKey:  apiKey,
+			APIKey: apiKey,
+			// Project ID is loaded from the GOOGLE_CLOUD_PROJECT environment variable
+			// Location/Region is loaded from either GOOGLE_CLOUD_LOCATION or GOOGLE_CLOUD_REGION environment variable
 			Backend: genai.BackendGeminiAPI,
 		}
 	case vertexaiBackend:
