@@ -31,20 +31,35 @@ import (
 
 const (
 	geminiDefaultModel = "gemini-2.0-pro-exp-02-05"
+	geminiBackend      = "gemini"
+	vertexaiBackend    = "vertexai"
 )
 
 // NewGeminiClient builds a client for the Gemini API.
-func NewGeminiClient(ctx context.Context) (*GeminiClient, error) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
+func NewGeminiClient(ctx context.Context, backend string) (*GeminiClient, error) {
+	var cc *genai.ClientConfig
+
+	switch backend {
+	case geminiBackend:
+		apiKey := os.Getenv("GEMINI_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
+		}
+		cc = &genai.ClientConfig{
+			APIKey:  apiKey,
+			Backend: genai.BackendGeminiAPI,
+		}
+	case vertexaiBackend:
+		cc = &genai.ClientConfig{
+			// Project ID is loaded from the GOOGLE_CLOUD_PROJECT environment variable
+			// Location/Region is loaded from either GOOGLE_CLOUD_LOCATION or GOOGLE_CLOUD_REGION environment variable
+			Backend: genai.BackendVertexAI,
+		}
+	default:
+		return nil, fmt.Errorf("unknown backend %q", backend)
 	}
 
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  apiKey,
-		Backend: genai.BackendGeminiAPI,
-	})
-
+	client, err := genai.NewClient(ctx, cc)
 	if err != nil {
 		return nil, fmt.Errorf("building gemini client: %w", err)
 	}
@@ -178,20 +193,22 @@ type GeminiChat struct {
 // SetFunctionDefinitions sets the function definitions for the chat.
 // This allows the LLM to call user-defined functions.
 func (c *GeminiChat) SetFunctionDefinitions(functionDefinitions []*FunctionDefinition) error {
+	var genaiFunctionDeclarations []*genai.FunctionDeclaration
 	for _, functionDefinition := range functionDefinitions {
 		parameters, err := toGeminiSchema(functionDefinition.Parameters)
 		if err != nil {
 			return err
 		}
-		c.genConfig.Tools = append(c.genConfig.Tools, &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{
-				{
-					Name:        functionDefinition.Name,
-					Description: functionDefinition.Description,
-					Parameters:  parameters,
-				},
-			},
+		genaiFunctionDeclarations = append(genaiFunctionDeclarations, &genai.FunctionDeclaration{
+			Name:        functionDefinition.Name,
+			Description: functionDefinition.Description,
+			Parameters:  parameters,
 		})
+	}
+	c.genConfig.Tools = []*genai.Tool{
+		{
+			FunctionDeclarations: genaiFunctionDeclarations,
+		},
 	}
 	return nil
 }
