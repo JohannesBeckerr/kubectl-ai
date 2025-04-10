@@ -158,7 +158,7 @@ func (c *GeminiClient) StartChat(systemPrompt string, model string) Chat {
 			Temperature:      &temperature,
 			TopK:             &topK,
 			TopP:             &topP,
-			MaxOutputTokens:  &maxOutputTokens,
+			MaxOutputTokens:  maxOutputTokens,
 			ResponseMIMEType: "text/plain",
 		},
 		history: []*genai.Content{},
@@ -427,9 +427,9 @@ func (c *GeminiChat) IsRetryableError(err error) bool {
 		return false
 	}
 
-	var clientErr genai.ClientError
-	if errors.As(err, &clientErr) {
-		switch clientErr.Code {
+	var apiErr genai.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.Code {
 		case http.StatusConflict, http.StatusTooManyRequests,
 			http.StatusInternalServerError, http.StatusBadGateway,
 			http.StatusServiceUnavailable, http.StatusGatewayTimeout:
@@ -439,17 +439,6 @@ func (c *GeminiChat) IsRetryableError(err error) bool {
 		}
 	}
 
-	var serverErr genai.ServerError
-	if errors.As(err, &serverErr) {
-		switch serverErr.Code {
-		case http.StatusConflict, http.StatusTooManyRequests,
-			http.StatusInternalServerError, http.StatusBadGateway,
-			http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-			return true
-		default:
-			return false
-		}
-	}
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return true
