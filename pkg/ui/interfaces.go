@@ -18,7 +18,10 @@ import "context"
 
 type UI interface {
 	RenderOutput(ctx context.Context, s string, style ...StyleOption)
-	AskForConfirmation(ctx context.Context, s string) bool
+
+	// AskForConfirmation asks the user for confirmation of a choice.
+	// The user can select one of the validChoices, and the selected choice is returned.
+	AskForConfirmation(ctx context.Context, s string, validChoices []int) (selectedChoice int)
 
 	// ClearScreen clears any output rendered to the screen
 	ClearScreen()
