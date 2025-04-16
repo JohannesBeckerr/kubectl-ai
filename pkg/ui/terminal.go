@@ -89,6 +89,7 @@ func (u *TerminalUI) DocumentChanged(doc *Document, block Block) {
 	}
 
 	text := ""
+	streaming := false
 
 	var styleOptions []StyleOption
 	switch block := block.(type) {
@@ -104,6 +105,7 @@ func (u *TerminalUI) DocumentChanged(doc *Document, block Block) {
 			styleOptions = append(styleOptions, Foreground(block.Color))
 		}
 		text = block.Text()
+		streaming = block.Streaming()
 	case *InputTextBlock:
 		fmt.Print("\n>>> ")
 		reader := bufio.NewReader(os.Stdin)
@@ -146,7 +148,22 @@ func (u *TerminalUI) DocumentChanged(doc *Document, block Block) {
 		opt(computedStyle)
 	}
 
+	if streaming && computedStyle.renderMarkdown {
+		// Because we can't render markdown incrementally,
+		// we "hold back" the text if we are streaming markdown until streaming is done
+		text = ""
+	}
+
 	printText := text
+
+	if computedStyle.renderMarkdown && printText != "" {
+		out, err := u.markdownRenderer.Render(printText)
+		if err != nil {
+			klog.Errorf("Error rendering markdown: %v", err)
+		} else {
+			printText = out
+		}
+	}
 
 	if u.currentBlockText != "" {
 		if strings.HasPrefix(text, u.currentBlockText) {
@@ -156,17 +173,6 @@ func (u *TerminalUI) DocumentChanged(doc *Document, block Block) {
 		}
 	}
 	u.currentBlockText = text
-
-	// TODO: Reintroduce markdown support (it's difficult with streaming)
-	//
-	// if computedStyle.renderMarkdown {
-	// 	out, err := u.markdownRenderer.Render(printText)
-	// 	if err != nil {
-	// 		klog.Errorf("Error rendering markdown: %v", err)
-	// 	} else {
-	// 		printText = out
-	// 	}
-	// }
 
 	reset := ""
 	switch computedStyle.foreground {

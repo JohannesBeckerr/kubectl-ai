@@ -23,6 +23,9 @@ type AgentTextBlock struct {
 
 	// Color is the foreground color of the text
 	Color ColorValue
+
+	// streaming is true if we are still streaming results in
+	streaming bool
 }
 
 func NewAgentTextBlock() *AgentTextBlock {
@@ -39,6 +42,16 @@ func (b *AgentTextBlock) Document() *Document {
 
 func (b *AgentTextBlock) Text() string {
 	return b.text
+}
+
+func (b *AgentTextBlock) Streaming() bool {
+	return b.streaming
+}
+
+func (b *AgentTextBlock) SetStreaming(streaming bool) *AgentTextBlock {
+	b.streaming = streaming
+	b.doc.blockChanged(b)
+	return b
 }
 
 func (b *AgentTextBlock) SetColor(color ColorValue) *AgentTextBlock {
