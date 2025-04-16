@@ -15,6 +15,7 @@
 package gollm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 
 	"google.golang.org/genai"
@@ -44,10 +46,49 @@ func geminiFactory(ctx context.Context, u *url.URL) (Client, error) {
 }
 
 func vertexaiViaGeminiFactory(ctx context.Context, u *url.URL) (Client, error) {
+	log := klog.FromContext(ctx)
+
 	opt := GeminiClientOptions{}
 	opt.Backend = genai.BackendVertexAI
 
+	// ProjectID is required
+	if opt.Project == "" {
+		projectID, err := findDefaultGCPProject(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("finding default GCP project ID: %w", err)
+		}
+		opt.Project = projectID
+	}
+
+	// Location is also required
+	if opt.Location == "" {
+		opt.Location = "us-central1"
+		log.Info("defaulted location for vertex client", "location", opt.Location)
+	}
 	return NewGeminiClient(ctx, opt)
+}
+
+// findDefaultGCPProject gets the default GCP project ID from gcloud
+func findDefaultGCPProject(ctx context.Context) (string, error) {
+	log := klog.FromContext(ctx)
+
+	projectID := ""
+
+	if projectID == "" {
+		cmd := exec.CommandContext(ctx, "gcloud", "config", "get", "project")
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("cannot get project (using gcloud config get project): %w", err)
+		}
+		projectID = strings.TrimSpace(stdout.String())
+		if projectID == "" {
+			return "", fmt.Errorf("project was not set in gcloud config")
+		}
+		log.Info("got project from gcloud config", "project", projectID)
+	}
+
+	return projectID, nil
 }
 
 // GeminiClientOptions are the options for the Gemini API client.
