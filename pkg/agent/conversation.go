@@ -201,6 +201,7 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 					log.Info("text response", "text", text)
 					if agentTextBlock == nil {
 						agentTextBlock = ui.NewAgentTextBlock()
+						agentTextBlock.SetStreaming(true)
 						a.doc.AddBlock(agentTextBlock)
 					}
 					agentTextBlock.AppendText(text)
@@ -212,6 +213,10 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 					functionCalls = append(functionCalls, calls...)
 				}
 			}
+		}
+
+		if agentTextBlock != nil {
+			agentTextBlock.SetStreaming(false)
 		}
 
 		// TODO(droot): Run all function calls in parallel
