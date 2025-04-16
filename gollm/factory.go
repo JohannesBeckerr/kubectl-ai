@@ -261,6 +261,12 @@ func (rc *retryChat[C]) Send(ctx context.Context, contents ...any) (ChatResponse
 	return Retry[ChatResponse](ctx, rc.config, rc.underlying.IsRetryableError, operation)
 }
 
+// Embed implements the Client interface for the retryClient decorator.
+func (rc *retryChat[C]) SendStreaming(ctx context.Context, contents ...any) (ChatResponseIterator, error) {
+	// TODO: Retry logic
+	return rc.underlying.SendStreaming(ctx, contents...)
+}
+
 func (rc *retryChat[C]) SetFunctionDefinitions(functionDefinitions []*FunctionDefinition) error {
 	return rc.underlying.SetFunctionDefinitions(functionDefinitions)
 }

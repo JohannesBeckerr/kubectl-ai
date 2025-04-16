@@ -21,9 +21,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
-
 	"slices"
+	"strings"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
 	"github.com/charmbracelet/glamour"
@@ -149,7 +148,6 @@ func (u *TerminalUI) DocumentChanged(doc *Document, block Block) {
 
 	printText := text
 
-	// This supports streaming output, though we don't wire it up yet
 	if u.currentBlockText != "" {
 		if strings.HasPrefix(text, u.currentBlockText) {
 			printText = strings.TrimPrefix(printText, u.currentBlockText)

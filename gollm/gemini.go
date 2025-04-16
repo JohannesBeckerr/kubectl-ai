@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"net"
 	"net/http"
 	"net/url"
@@ -285,19 +286,15 @@ func toGeminiSchema(schema *Schema) (*genai.Schema, error) {
 	return ret, nil
 }
 
-// SendMessage sends a message to the model.
-// It returns a ChatResponse object containing the response from the model.
-func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, error) {
-	log := klog.FromContext(ctx)
-	log.V(1).Info("sending LLM request", "user", contents)
+func (c *GeminiChat) partsToGemini(contents ...any) ([]*genai.Part, error) {
+	var parts []*genai.Part
 
-	genaiContent := &genai.Content{Role: "user"}
 	for _, content := range contents {
 		switch v := content.(type) {
 		case string:
-			genaiContent.Parts = append(genaiContent.Parts, genai.NewPartFromText(v))
+			parts = append(parts, genai.NewPartFromText(v))
 		case FunctionCallResult:
-			genaiContent.Parts = append(genaiContent.Parts, &genai.Part{
+			parts = append(parts, &genai.Part{
 				FunctionResponse: &genai.FunctionResponse{
 					ID:       v.ID,
 					Name:     v.Name,
@@ -308,6 +305,25 @@ func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, e
 			return nil, fmt.Errorf("unexpected type of content: %T", content)
 		}
 	}
+	return parts, nil
+}
+
+// SendMessage sends a message to the model.
+// It returns a ChatResponse object containing the response from the model.
+func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, error) {
+	log := klog.FromContext(ctx)
+	log.V(1).Info("sending LLM request", "user", contents)
+
+	parts, err := c.partsToGemini(contents...)
+	if err != nil {
+		return nil, err
+	}
+
+	genaiContent := &genai.Content{
+		Role:  "user",
+		Parts: parts,
+	}
+
 	c.history = append(c.history, genaiContent)
 	result, err := c.client.Models.GenerateContent(ctx, c.model, c.history, c.genConfig)
 	if err != nil {
@@ -320,6 +336,49 @@ func (c *GeminiChat) Send(ctx context.Context, contents ...any) (ChatResponse, e
 	geminiResponse := result
 	log.V(1).Info("got LLM response", "response", geminiResponse)
 	return &GeminiChatResponse{geminiResponse: geminiResponse}, nil
+}
+
+func (c *GeminiChat) SendStreaming(ctx context.Context, contents ...any) (ChatResponseIterator, error) {
+	log := klog.FromContext(ctx)
+	log.V(1).Info("sending LLM streaming request", "user", contents)
+
+	parts, err := c.partsToGemini(contents...)
+	if err != nil {
+		return nil, err
+	}
+
+	genaiContent := &genai.Content{
+		Role:  "user",
+		Parts: parts,
+	}
+
+	c.history = append(c.history, genaiContent)
+	stream := c.client.Models.GenerateContentStream(ctx, c.model, c.history, c.genConfig)
+
+	return func(yield func(ChatResponse, error) bool) {
+		next, stop := iter.Pull2(stream)
+		defer stop()
+		for {
+			geminiResponse, err, ok := next()
+			if !ok {
+				return
+			}
+
+			var response *GeminiChatResponse
+			if geminiResponse != nil {
+				response = &GeminiChatResponse{geminiResponse: geminiResponse}
+
+				if len(geminiResponse.Candidates) > 0 {
+					// TODO: Should we try to coalesce parts when we have a streaming response?
+					c.history = append(c.history, geminiResponse.Candidates[0].Content)
+				}
+			}
+
+			if !yield(response, err) {
+				return
+			}
+		}
+	}, nil
 }
 
 // GeminiChatResponse is a response from the Gemini API.

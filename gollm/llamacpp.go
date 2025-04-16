@@ -271,6 +271,15 @@ func (c *LlamaCppChat) Send(ctx context.Context, contents ...any) (ChatResponse,
 	return llmacppResponse, nil
 }
 
+func (c *LlamaCppChat) SendStreaming(ctx context.Context, contents ...any) (ChatResponseIterator, error) {
+	// TODO: Implement streaming
+	response, err := c.Send(ctx, contents...)
+	if err != nil {
+		return nil, err
+	}
+	return singletonChatResponseIterator(response), nil
+}
+
 func (c *LlamaCppChat) IsRetryableError(err error) bool {
 	// TODO(droot): Implement this
 	return false
