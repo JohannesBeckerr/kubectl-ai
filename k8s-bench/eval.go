@@ -312,6 +312,7 @@ func (x *TaskExecution) runAgent(ctx context.Context) error {
 		fmt.Sprintf("--enable-tool-use-shim=%t", x.llmConfig.EnableToolUseShim),
 		"--model", x.llmConfig.ModelID,
 		"--trace-path", tracePath,
+		"--skip-permissions",
 	}
 
 	stdinReader, stdinWriter := io.Pipe()

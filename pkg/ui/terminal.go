@@ -17,7 +17,10 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
+
+	"slices"
 
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
 	"github.com/charmbracelet/glamour"
@@ -90,15 +93,39 @@ func (u *TerminalUI) ClearScreen() {
 	fmt.Print("\033[H\033[2J")
 }
 
-func (u *TerminalUI) AskForConfirmation(ctx context.Context, s string) bool {
+func (u *TerminalUI) AskForConfirmation(ctx context.Context, s string, validChoices []int) int {
 	log := klog.FromContext(ctx)
 	fmt.Printf("%s\n", s)
-	var response string
-	_, err := fmt.Scanln(&response)
-	if err != nil {
-		log.Error(err, "Error reading user input")
-		return false
+
+	validStrs := make([]string, len(validChoices))
+	for i, v := range validChoices {
+		validStrs[i] = strconv.Itoa(v)
 	}
-	response = strings.ToLower(response)
-	return response == "y" || response == "yes"
+
+	for {
+		fmt.Print("  Enter your choice (number): ")
+		var response string
+		_, err := fmt.Scanln(&response)
+		if err != nil {
+			log.Error(err, "Error reading user input")
+			fmt.Println("Error reading input. Please try again.")
+			continue // Ask again
+		}
+
+		choice, err := strconv.Atoi(strings.TrimSpace(response))
+		if err != nil {
+			log.V(1).Info("Invalid input, expected a number.", "input", response)
+			fmt.Println("  Invalid input. Please enter a number.")
+			continue // Ask again
+		}
+
+		if slices.Contains(validChoices, choice) {
+			return choice
+		}
+
+		// If not returned, the choice was invalid
+		log.V(1).Info("Invalid choice entered.", "choice", choice, "validChoices", validChoices)
+		fmt.Printf("  Invalid choice. Please enter one of: %s\n", strings.Join(validStrs, ", "))
+		continue
+	}
 }

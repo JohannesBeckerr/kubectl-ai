@@ -69,9 +69,9 @@ type Options struct {
 	ProviderID string `json:"llmProvider,omitempty"`
 	ModelID    string `json:"model,omitempty"`
 
-	// AsksForConfirmation is a flag to ask for confirmation before executing kubectl commands
+	// SkipPermissions is a flag to skip asking for confirmation before executing kubectl commands
 	// that modifies resources in the cluster.
-	AsksForConfirmation bool `json:"askForConfirmation,omitempty"`
+	SkipPermissions bool `json:"skipPermissions,omitempty"`
 
 	// EnableToolUseShim is a flag to enable tool use shim.
 	// TODO(droot): figure out a better way to discover if the model supports tool use
@@ -85,8 +85,8 @@ func (o *Options) InitDefaults() {
 	// default to react because default model doesn't support function calling.
 	o.ProviderID = "gemini"
 	o.ModelID = geminiModels[0]
-	// default to false because our goal is to make the agent truly autonomous by default
-	o.AsksForConfirmation = false
+	// by default, confirm before executing kubectl commands that modify resources in the cluster.
+	o.SkipPermissions = false
 	o.MCPServer = false
 
 	// We now default to our strongest model (gemini-2.5-pro-exp-03-25) which supports tool use natively.
@@ -162,7 +162,7 @@ func run(ctx context.Context) error {
 
 	flag.StringVar(&opt.ProviderID, "llm-provider", opt.ProviderID, "language model provider")
 	flag.StringVar(&opt.ModelID, "model", opt.ModelID, "language model e.g. gemini-2.0-flash-thinking-exp-01-21, gemini-2.0-flash")
-	flag.BoolVar(&opt.AsksForConfirmation, "ask-for-confirmation", opt.AsksForConfirmation, "ask for confirmation before executing kubectl commands that modify resources")
+	flag.BoolVar(&opt.SkipPermissions, "skip-permissions", opt.SkipPermissions, "(dangerous) skip asking for confirmation before executing kubectl commands that modify resources")
 	flag.BoolVar(&opt.MCPServer, "mcp-server", opt.MCPServer, "run in MCP server mode")
 	flag.BoolVar(&opt.EnableToolUseShim, "enable-tool-use-shim", opt.EnableToolUseShim, "enable tool use shim")
 	// add commandline flags for logging
@@ -269,16 +269,16 @@ func run(ctx context.Context) error {
 	}
 
 	conversation := &agent.Conversation{
-		Model:               opt.ModelID,
-		Kubeconfig:          kubeconfigPath,
-		LLM:                 llmClient,
-		MaxIterations:       *maxIterations,
-		PromptTemplateFile:  *promptTemplateFile,
-		Tools:               tools.Default(),
-		Recorder:            recorder,
-		RemoveWorkDir:       *removeWorkDir,
-		AsksForConfirmation: opt.AsksForConfirmation,
-		EnableToolUseShim:   opt.EnableToolUseShim,
+		Model:              opt.ModelID,
+		Kubeconfig:         kubeconfigPath,
+		LLM:                llmClient,
+		MaxIterations:      *maxIterations,
+		PromptTemplateFile: *promptTemplateFile,
+		Tools:              tools.Default(),
+		Recorder:           recorder,
+		RemoveWorkDir:      *removeWorkDir,
+		SkipPermissions:    opt.SkipPermissions,
+		EnableToolUseShim:  opt.EnableToolUseShim,
 	}
 
 	err = conversation.Init(ctx, u)

@@ -46,8 +46,8 @@ type Conversation struct {
 
 	MaxIterations int
 
-	Kubeconfig          string
-	AsksForConfirmation bool
+	Kubeconfig      string
+	SkipPermissions bool
 
 	Tools tools.Tools
 
@@ -205,11 +205,26 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 
 					s := toolCall.PrettyPrint()
 					a.UI.RenderOutput(ctx, fmt.Sprintf("  Running: %s\n", s), ui.Foreground(ui.ColorGreen))
-					if a.AsksForConfirmation && call.Arguments["modifies_resource"] == "no" {
-						confirm := a.UI.AskForConfirmation(ctx, "  Are you sure you want to run this command (Y/n)? ")
-						if !confirm {
-							a.UI.RenderOutput(ctx, "Sure.\n", ui.RenderMarkdown())
+					// Ask for confirmation only if SkipPermissions is false AND the tool modifies resources.
+					if !a.SkipPermissions && call.Arguments["modifies_resource"] != "no" {
+						confirmationPrompt := `  Do you want to proceed?
+  1) Yes
+  2) Yes, and don't ask me again
+  3) No`
+						selectedChoice := a.UI.AskForConfirmation(ctx, confirmationPrompt, []int{1, 2, 3})
+						switch selectedChoice {
+						case 1:
+							// Proceed with the operation
+						case 2:
+							a.SkipPermissions = true
+						case 3:
+							a.UI.RenderOutput(ctx, "Operation cancelled by user.\n", ui.RenderMarkdown())
 							return nil
+						default:
+							// This case should technically not be reachable due to AskForConfirmation loop
+							log.Error(fmt.Errorf("unexpected confirmation choice: %d", selectedChoice), "Invalid choice received from AskForConfirmation")
+							a.UI.RenderOutput(ctx, "Invalid choice received. Cancelling operation.\n", ui.Foreground(ui.ColorRed))
+							return fmt.Errorf("invalid confirmation choice: %d", selectedChoice)
 						}
 					}
 
