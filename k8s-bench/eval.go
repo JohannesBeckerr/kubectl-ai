@@ -310,6 +310,7 @@ func (x *TaskExecution) runAgent(ctx context.Context) error {
 		"--kubeconfig", x.kubeConfig,
 		"--llm-provider", x.llmConfig.ProviderID,
 		fmt.Sprintf("--enable-tool-use-shim=%t", x.llmConfig.EnableToolUseShim),
+		fmt.Sprintf("--quiet=%t", x.llmConfig.Quiet),
 		"--model", x.llmConfig.ModelID,
 		"--trace-path", tracePath,
 		"--skip-permissions",

@@ -41,8 +41,7 @@ var Version = "0.1.0-dev"
 
 // models
 var geminiModels = []string{
-	"gemini-2.5-pro-exp-03-25",
-	"gemini-2.0-flash-thinking-exp-01-21",
+	"gemini-2.5-pro-preview-03-25",
 	"gemini-2.0-flash",
 }
 
@@ -78,11 +77,14 @@ type Options struct {
 	// and set this automatically.
 	EnableToolUseShim bool `json:"enableToolUseShim,omitempty"`
 
+	// Quiet flag indicates if the agent should run in non-interactive mode.
+	// It requires a query to be provided as a positional argument.
+	Quiet bool `json:"quiet,omitempty"`
+
 	MCPServer bool
 }
 
 func (o *Options) InitDefaults() {
-	// default to react because default model doesn't support function calling.
 	o.ProviderID = "gemini://"
 	o.ModelID = geminiModels[0]
 	// by default, confirm before executing kubectl commands that modify resources in the cluster.
@@ -165,6 +167,8 @@ func run(ctx context.Context) error {
 	flag.BoolVar(&opt.SkipPermissions, "skip-permissions", opt.SkipPermissions, "(dangerous) skip asking for confirmation before executing kubectl commands that modify resources")
 	flag.BoolVar(&opt.MCPServer, "mcp-server", opt.MCPServer, "run in MCP server mode")
 	flag.BoolVar(&opt.EnableToolUseShim, "enable-tool-use-shim", opt.EnableToolUseShim, "enable tool use shim")
+	flag.BoolVar(&opt.Quiet, "quiet", opt.Quiet, "run in non-interactive mode, requires a query to be provided as a positional argument")
+
 	// add commandline flags for logging
 	klog.InitFlags(nil)
 
@@ -265,7 +269,9 @@ func run(ctx context.Context) error {
 
 	doc := ui.NewDocument()
 
-	u, err := ui.NewTerminalUI(doc, recorder)
+	// since stdin is already consumed, we use TTY for taking input from user
+	useTTYForInput := stdinHasData
+	u, err := ui.NewTerminalUI(doc, recorder, useTTYForInput)
 	if err != nil {
 		return err
 	}
@@ -297,13 +303,14 @@ func run(ctx context.Context) error {
 		LLM:          llmClient,
 	}
 
-	if queryFromCmd != "" {
-		query := queryFromCmd
-
-		return chatSession.answerQuery(ctx, query)
+	if opt.Quiet {
+		if queryFromCmd == "" {
+			return fmt.Errorf("quiet mode requires a query to be provided as a positional argument")
+		}
+		return chatSession.answerQuery(ctx, queryFromCmd)
 	}
 
-	return chatSession.repl(ctx)
+	return chatSession.repl(ctx, queryFromCmd)
 }
 
 // session represents the user chat session (interactive/non-interactive both)
@@ -317,29 +324,33 @@ type session struct {
 }
 
 // repl is a read-eval-print loop for the chat session.
-func (s *session) repl(ctx context.Context) error {
-	s.doc.AddBlock(ui.NewAgentTextBlock().SetText("Hey there, what can I help you with today?"))
-
+func (s *session) repl(ctx context.Context, initialQuery string) error {
+	query := initialQuery
+	if query == "" {
+		s.doc.AddBlock(ui.NewAgentTextBlock().SetText("Hey there, what can I help you with today?"))
+	}
 	for {
-		input := ui.NewInputTextBlock()
-		s.doc.AddBlock(input)
+		if query == "" {
+			input := ui.NewInputTextBlock()
+			s.doc.AddBlock(input)
 
-		query, err := input.Observable().Wait()
-		if err != nil {
-			if err == io.EOF {
-				// Use hit control-D, or was piping and we reached the end of stdin.
-				// Not a "big" problem
-				return nil
+			userInput, err := input.Observable().Wait()
+			if err != nil {
+				if err == io.EOF {
+					// Use hit control-D, or was piping and we reached the end of stdin.
+					// Not a "big" problem
+					return nil
+				}
+				return fmt.Errorf("reading input: %w", err)
 			}
-			return fmt.Errorf("reading input: %w", err)
+			query = strings.TrimSpace(userInput)
 		}
-		query = strings.TrimSpace(query)
 
 		switch {
 		case query == "":
 			continue
 		case query == "reset":
-			err = s.conversation.Init(ctx, s.doc)
+			err := s.conversation.Init(ctx, s.doc)
 			if err != nil {
 				return err
 			}
@@ -355,6 +366,8 @@ func (s *session) repl(ctx context.Context) error {
 				s.doc.AddBlock(errorBlock)
 			}
 		}
+		// Reset query to empty string so that we prompt for input again
+		query = ""
 	}
 }
 

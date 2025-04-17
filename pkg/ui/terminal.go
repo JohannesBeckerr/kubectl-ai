@@ -39,11 +39,16 @@ type TerminalUI struct {
 	currentBlock Block
 	// currentBlockText is text of the currentBlock that we have already rendered to the screen
 	currentBlockText string
+
+	// This is useful in cases where stdin is already been used for providing the input to the agent (caller in this case)
+	// in such cases, stdin is already consumed and closed and reading input results in IO error.
+	// In such cases, we open /dev/tty and use it for taking input.
+	useTTYForInput bool
 }
 
 var _ UI = &TerminalUI{}
 
-func NewTerminalUI(doc *Document, journal journal.Recorder) (*TerminalUI, error) {
+func NewTerminalUI(doc *Document, journal journal.Recorder, useTTYForInput bool) (*TerminalUI, error) {
 	mdRenderer, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithPreservedNewLines(),
@@ -52,7 +57,7 @@ func NewTerminalUI(doc *Document, journal journal.Recorder) (*TerminalUI, error)
 	if err != nil {
 		return nil, fmt.Errorf("error initializing the markdown renderer: %w", err)
 	}
-	u := &TerminalUI{markdownRenderer: mdRenderer, journal: journal}
+	u := &TerminalUI{markdownRenderer: mdRenderer, journal: journal, useTTYForInput: useTTYForInput}
 
 	subscription := doc.AddSubscription(u)
 	u.subscription = subscription
@@ -108,7 +113,19 @@ func (u *TerminalUI) DocumentChanged(doc *Document, block Block) {
 		streaming = block.Streaming()
 	case *InputTextBlock:
 		fmt.Print("\n>>> ")
-		reader := bufio.NewReader(os.Stdin)
+		var reader *bufio.Reader
+		if u.useTTYForInput {
+			// Stdin was used for piped data, open the terminal directly
+			tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+			if err != nil {
+				block.Observable().Set("", err)
+				return
+			}
+			defer tty.Close()
+			reader = bufio.NewReader(tty)
+		} else {
+			reader = bufio.NewReader(os.Stdin)
+		}
 		query, err := reader.ReadString('\n')
 		if err != nil {
 			block.Observable().Set("", err)
@@ -119,11 +136,23 @@ func (u *TerminalUI) DocumentChanged(doc *Document, block Block) {
 
 	case *InputOptionBlock:
 		fmt.Printf("%s\n", block.Prompt)
+		var reader *bufio.Reader
+		if u.useTTYForInput {
+			tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+			if err != nil {
+				block.Observable().Set("", err)
+				return
+			}
+			defer tty.Close()
+			reader = bufio.NewReader(tty)
+		} else {
+			reader = bufio.NewReader(os.Stdin)
+		}
 
 		for {
 			fmt.Print("  Enter your choice (number): ")
 			var response string
-			_, err := fmt.Scanln(&response)
+			response, err := reader.ReadString('\n')
 			if err != nil {
 				block.Observable().Set("", err)
 				break

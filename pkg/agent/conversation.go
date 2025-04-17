@@ -228,10 +228,10 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 			}
 
 			s := toolCall.PrettyPrint()
-			a.doc.AddBlock(ui.NewAgentTextBlock().SetText(fmt.Sprintf("  Running: %s\n", s)).SetColor(ui.ColorGreen))
+			a.doc.AddBlock(ui.NewFunctionCallRequestBlock().SetText(fmt.Sprintf("  Running: %s\n", s)))
 			// Ask for confirmation only if SkipPermissions is false AND the tool modifies resources.
 			if !a.SkipPermissions && call.Arguments["modifies_resource"] != "no" {
-				confirmationPrompt := `  Do you want to proceed?
+				confirmationPrompt := `  Do you want to proceed ?
   1) Yes
   2) Yes, and don't ask me again
   3) No`
@@ -256,13 +256,16 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 				case "2":
 					a.SkipPermissions = true
 				case "3":
-					a.doc.AddBlock(ui.NewAgentTextBlock().SetText("Operation cancelled by user."))
-					return nil
+					a.doc.AddBlock(ui.NewAgentTextBlock().SetText("Operation was skipped."))
+					observation := fmt.Sprintf("User didn't approve running %q.\n", call.Name)
+					currChatContent = append(currChatContent, observation)
+					continue
 				default:
 					// This case should technically not be reachable due to AskForConfirmation loop
-					log.Error(fmt.Errorf("unexpected confirmation choice: %q", selectedChoice), "Invalid choice received from AskForConfirmation")
+					err := fmt.Errorf("invalid confirmation choice: %q", selectedChoice)
+					log.Error(err, "Invalid choice received from AskForConfirmation")
 					a.doc.AddBlock(ui.NewErrorBlock().SetText("Invalid choice received. Cancelling operation."))
-					return fmt.Errorf("invalid confirmation choice: %q", selectedChoice)
+					return err
 				}
 			}
 

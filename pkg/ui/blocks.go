@@ -80,6 +80,10 @@ type FunctionCallRequestBlock struct {
 	text string
 }
 
+func NewFunctionCallRequestBlock() *FunctionCallRequestBlock {
+	return &FunctionCallRequestBlock{}
+}
+
 func (b *FunctionCallRequestBlock) attached(doc *Document) {
 	b.doc = doc
 }

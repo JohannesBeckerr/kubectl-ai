@@ -43,6 +43,8 @@ type LLMConfig struct {
 
 	EnableToolUseShim bool `json:"enableToolUseShim"`
 
+	Quiet bool `json:"quiet"`
+
 	// TODO: Maybe different styles of invocation, or different temperatures etc?
 }
 

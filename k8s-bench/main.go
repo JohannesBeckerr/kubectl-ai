@@ -155,10 +155,11 @@ func runEvals(ctx context.Context) error {
 		flag.PrintDefaults()
 	}
 
-	llmProvider := "gemini"
+	llmProvider := "gemini://"
 	modelList := ""
 	defaultKubeConfig := "~/.kube/config"
 	enableToolUseShim := true
+	quiet := true
 
 	flag.StringVar(&config.TasksDir, "tasks-dir", config.TasksDir, "Directory containing evaluation tasks")
 	flag.StringVar(&config.KubeConfig, "kubeconfig", config.KubeConfig, "Path to kubeconfig file")
@@ -167,6 +168,7 @@ func runEvals(ctx context.Context) error {
 	flag.StringVar(&llmProvider, "llm-provider", llmProvider, "Specific LLM provider to evaluate (e.g. 'gemini' or 'ollama')")
 	flag.StringVar(&modelList, "models", modelList, "Comma-separated list of models to evaluate (e.g. 'gemini-1.0,gemini-2.0')")
 	flag.BoolVar(&enableToolUseShim, "enable-tool-use-shim", enableToolUseShim, "Enable tool use shim")
+	flag.BoolVar(&quiet, "quiet", quiet, "Quiet mode (non-interactive mode)")
 	flag.StringVar(&config.OutputDir, "output-dir", config.OutputDir, "Directory to write results to")
 	flag.Parse()
 
@@ -181,7 +183,7 @@ func runEvals(ctx context.Context) error {
 	config.KubeConfig = expandedKubeconfig
 
 	defaultModels := map[string][]string{
-		"gemini": {"gemini-2.0-flash-thinking-exp-01-21"},
+		"gemini://": {"gemini-2.5-pro-preview-03-25"},
 	}
 
 	models := defaultModels
@@ -209,6 +211,7 @@ func runEvals(ctx context.Context) error {
 				ProviderID:        llmProviderID,
 				ModelID:           modelID,
 				EnableToolUseShim: enableToolUseShim,
+				Quiet:             quiet,
 			})
 		}
 	}
