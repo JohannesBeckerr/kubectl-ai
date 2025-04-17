@@ -62,9 +62,26 @@ func vertexaiViaGeminiFactory(ctx context.Context, u *url.URL) (Client, error) {
 
 	// Location is also required
 	if opt.Location == "" {
-		opt.Location = "us-central1"
-		log.Info("defaulted location for vertex client", "location", opt.Location)
+		location := ""
+
+		// Check well-known env vars
+		for _, env := range []string{"GOOGLE_CLOUD_LOCATION", "GOOGLE_CLOUD_REGION"} {
+			if v := os.Getenv(env); v != "" {
+				location = v
+				log.Info("got location for vertex client from env var", "location", location, "env", env)
+				break
+			}
+		}
+
+		// Fallback to us-central1
+		if location == "" {
+			location = "us-central1"
+			log.Info("defaulted location for vertex client", "location", opt.Location)
+		}
+
+		opt.Location = location
 	}
+
 	return NewGeminiClient(ctx, opt)
 }
 
@@ -72,9 +89,19 @@ func vertexaiViaGeminiFactory(ctx context.Context, u *url.URL) (Client, error) {
 func findDefaultGCPProject(ctx context.Context) (string, error) {
 	log := klog.FromContext(ctx)
 
+	// First check env vars
+	// GOOGLE_CLOUD_PROJECT is the default for the genai library and a GCP convention
 	projectID := ""
+	for _, env := range []string{"GOOGLE_CLOUD_PROJECT"} {
+		if v := os.Getenv(env); v != "" {
+			projectID = v
+			log.Info("got project for vertex client from env var", "project", projectID, "env", env)
+			return projectID, nil
+		}
+	}
 
-	if projectID == "" {
+	// Now check default project in gcloud
+	{
 		cmd := exec.CommandContext(ctx, "gcloud", "config", "get", "project")
 		var stdout bytes.Buffer
 		cmd.Stdout = &stdout
@@ -82,13 +109,13 @@ func findDefaultGCPProject(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("cannot get project (using gcloud config get project): %w", err)
 		}
 		projectID = strings.TrimSpace(stdout.String())
-		if projectID == "" {
-			return "", fmt.Errorf("project was not set in gcloud config")
+		if projectID != "" {
+			log.Info("got project from gcloud config", "project", projectID)
+			return projectID, nil
 		}
-		log.Info("got project from gcloud config", "project", projectID)
 	}
 
-	return projectID, nil
+	return "", fmt.Errorf("project was not set in gcloud config (or GOOGLE_CLOUD_PROJECT env var)")
 }
 
 // GeminiClientOptions are the options for the Gemini API client.
