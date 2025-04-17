@@ -16,10 +16,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -178,6 +180,9 @@ func run(ctx context.Context) error {
 	flag.Parse()
 
 	defer klog.Flush()
+
+	// Do this early, before the third-party code logs anything.
+	redirectStdLogToKlog()
 
 	// Handle kubeconfig with priority: command-line arg > env var > default path
 	kubeconfigPath := *kubeconfig
@@ -408,4 +413,26 @@ func (s *session) answerQuery(ctx context.Context, query string) error {
 		return s.conversation.RunOneRound(ctx, query)
 	}
 	return nil
+}
+
+// Redirect standard log output to our custom klog writer
+// This is primarily to suppress warning messages from
+// genai library https://github.com/googleapis/go-genai/blob/6ac4afc0168762dc3b7a4d940fc463cc1854f366/types.go#L1633
+func redirectStdLogToKlog() {
+	log.SetOutput(klogWriter{})
+
+	// Disable standard log's prefixes (date, time, file info)
+	// because klog will add its own more detailed prefix.
+	log.SetFlags(0)
+}
+
+// Define a custom writer that forwards messages to klog.Warning
+type klogWriter struct{}
+
+// Implement the io.Writer interface
+func (writer klogWriter) Write(data []byte) (n int, err error) {
+	// We trim the trailing newline because klog adds its own.
+	message := string(bytes.TrimSuffix(data, []byte("\n")))
+	klog.Warning(message)
+	return len(data), nil
 }
