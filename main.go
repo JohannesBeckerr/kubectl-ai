@@ -38,8 +38,12 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// Version will be set at build time
-var Version = "0.1.0-dev"
+// Using the defaults from goreleaser as per https://goreleaser.com/cookbooks/using-main.version/
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
 
 // models
 var geminiModels = []string{
@@ -396,7 +400,7 @@ func (s *session) answerQuery(ctx context.Context, query string) error {
 
 	case query == "version":
 		infoBlock := &ui.AgentTextBlock{}
-		infoBlock.AppendText(fmt.Sprintf("Client version: `%s`\n", Version))
+		infoBlock.AppendText(fmt.Sprintf("Version: `%s`\n", version))
 		s.doc.AddBlock(infoBlock)
 
 	case query == "models":
