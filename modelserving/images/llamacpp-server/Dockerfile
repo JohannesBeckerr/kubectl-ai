@@ -7,7 +7,7 @@ ARG CMAKE_ARGS
 ARG LLAMACPP_TAG
 
 RUN apt-get update
-RUN apt-get install -y g++ git cmake
+RUN apt-get install -y g++ git cmake libcurl4-openssl-dev
 
 WORKDIR /src
 RUN git clone https://github.com/ggml-org/llama.cpp
