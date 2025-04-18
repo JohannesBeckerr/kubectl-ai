@@ -39,50 +39,53 @@ func init() {
 }
 
 func geminiFactory(ctx context.Context, u *url.URL) (Client, error) {
-	opt := GeminiClientOptions{}
-	opt.Backend = genai.BackendGeminiAPI
+	opt := GeminiAPIClientOptions{}
 
-	return NewGeminiClient(ctx, opt)
+	return NewGeminiAPIClient(ctx, opt)
+}
+
+// GeminiAPIClientOptions are the options for the Gemini API client.
+type GeminiAPIClientOptions struct {
+	// API Key for GenAI. Required for BackendGeminiAPI.
+	APIKey string
+}
+
+// NewGeminiAPIClient builds a client for the Gemini API.
+func NewGeminiAPIClient(ctx context.Context, opt GeminiAPIClientOptions) (*GoogleAIClient, error) {
+	apiKey := opt.APIKey
+	if apiKey == "" {
+		apiKey = os.Getenv("GEMINI_API_KEY")
+	}
+	if apiKey == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
+	}
+	cc := &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	}
+
+	client, err := genai.NewClient(ctx, cc)
+	if err != nil {
+		return nil, fmt.Errorf("building gemini client: %w", err)
+	}
+
+	return &GoogleAIClient{
+		client: client,
+	}, nil
+}
+
+// VertexAIClientOptions are the options for using the VertexAPI.
+type VertexAIClientOptions struct {
+	// GCP Project ID for Vertex AI. Required for BackendVertexAI.
+	Project string
+	// GCP Location/Region for Vertex AI. Required for BackendVertexAI. See https://cloud.google.com/vertex-ai/docs/general/locations
+	Location string
 }
 
 func vertexaiViaGeminiFactory(ctx context.Context, u *url.URL) (Client, error) {
-	log := klog.FromContext(ctx)
+	opt := VertexAIClientOptions{}
 
-	opt := GeminiClientOptions{}
-	opt.Backend = genai.BackendVertexAI
-
-	// ProjectID is required
-	if opt.Project == "" {
-		projectID, err := findDefaultGCPProject(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("finding default GCP project ID: %w", err)
-		}
-		opt.Project = projectID
-	}
-
-	// Location is also required
-	if opt.Location == "" {
-		location := ""
-
-		// Check well-known env vars
-		for _, env := range []string{"GOOGLE_CLOUD_LOCATION", "GOOGLE_CLOUD_REGION"} {
-			if v := os.Getenv(env); v != "" {
-				location = v
-				log.Info("got location for vertex client from env var", "location", location, "env", env)
-				break
-			}
-		}
-
-		// Fallback to us-central1
-		if location == "" {
-			location = "us-central1"
-			log.Info("defaulted location for vertex client", "location", opt.Location)
-		}
-
-		opt.Location = location
-	}
-
-	return NewGeminiClient(ctx, opt)
+	return NewVertexAIClient(ctx, opt)
 }
 
 // findDefaultGCPProject gets the default GCP project ID from gcloud
@@ -118,45 +121,47 @@ func findDefaultGCPProject(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("project was not set in gcloud config (or GOOGLE_CLOUD_PROJECT env var)")
 }
 
-// GeminiClientOptions are the options for the Gemini API client.
-type GeminiClientOptions struct {
-	// API Key for GenAI. Required for BackendGeminiAPI.
-	APIKey string
-	// Backend for GenAI. See Backend constants. Defaults to BackendGeminiAPI unless explicitly set to BackendVertexAI, or the environment variable GOOGLE_GENAI_USE_VERTEXAI is set to "1" or "true".
-	Backend genai.Backend
-	// GCP Project ID for Vertex AI. Required for BackendVertexAI.
-	Project string
-	// GCP Location/Region for Vertex AI. Required for BackendVertexAI. See https://cloud.google.com/vertex-ai/docs/general/locations
-	Location string
-}
+// NewVertexAIClient builds a client for the vertexai API.
+func NewVertexAIClient(ctx context.Context, opt VertexAIClientOptions) (*GoogleAIClient, error) {
+	log := klog.FromContext(ctx)
 
-// NewGeminiClient builds a client for the Gemini API.
-func NewGeminiClient(ctx context.Context, opt GeminiClientOptions) (*GeminiClient, error) {
-	var cc *genai.ClientConfig
+	cc := &genai.ClientConfig{
+		// Project ID is loaded from the GOOGLE_CLOUD_PROJECT environment variable
+		// Location/Region is loaded from either GOOGLE_CLOUD_LOCATION or GOOGLE_CLOUD_REGION environment variable
+		Backend:  genai.BackendVertexAI,
+		Project:  opt.Project,
+		Location: opt.Location,
+	}
 
-	switch opt.Backend {
-	case genai.BackendGeminiAPI:
-		apiKey := opt.APIKey
-		if apiKey == "" {
-			apiKey = os.Getenv("GEMINI_API_KEY")
+	// ProjectID is required
+	if cc.Project == "" {
+		projectID, err := findDefaultGCPProject(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("finding default GCP project ID: %w", err)
 		}
-		if apiKey == "" {
-			return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
+		cc.Project = projectID
+	}
+
+	// Location is also required
+	if cc.Location == "" {
+		location := ""
+
+		// Check well-known env vars
+		for _, env := range []string{"GOOGLE_CLOUD_LOCATION", "GOOGLE_CLOUD_REGION"} {
+			if v := os.Getenv(env); v != "" {
+				location = v
+				log.Info("got location for vertex client from env var", "location", location, "env", env)
+				break
+			}
 		}
-		cc = &genai.ClientConfig{
-			APIKey:  apiKey,
-			Backend: genai.BackendGeminiAPI,
+
+		// Fallback to us-central1
+		if location == "" {
+			location = "us-central1"
+			log.Info("defaulted location for vertex client", "location", opt.Location)
 		}
-	case genai.BackendVertexAI:
-		cc = &genai.ClientConfig{
-			// Project ID is loaded from the GOOGLE_CLOUD_PROJECT environment variable
-			// Location/Region is loaded from either GOOGLE_CLOUD_LOCATION or GOOGLE_CLOUD_REGION environment variable
-			Backend:  genai.BackendVertexAI,
-			Project:  opt.Project,
-			Location: opt.Location,
-		}
-	default:
-		return nil, fmt.Errorf("unknown backend %q", opt.Backend)
+
+		cc.Location = location
 	}
 
 	client, err := genai.NewClient(ctx, cc)
@@ -164,24 +169,24 @@ func NewGeminiClient(ctx context.Context, opt GeminiClientOptions) (*GeminiClien
 		return nil, fmt.Errorf("building gemini client: %w", err)
 	}
 
-	return &GeminiClient{
+	return &GoogleAIClient{
 		client: client,
 	}, nil
 }
 
-// GeminiClient is a client for the Gemini API.
+// GoogleAIClient is a client for the google AI APIs.
 // It implements the Client interface.
-type GeminiClient struct {
+type GoogleAIClient struct {
 	client *genai.Client
 
 	// responseSchema will constrain the output to match the given schema
 	responseSchema *genai.Schema
 }
 
-var _ Client = &GeminiClient{}
+var _ Client = &GoogleAIClient{}
 
 // ListModels lists the models available in the Gemini API.
-func (c *GeminiClient) ListModels(ctx context.Context) (modelNames []string, err error) {
+func (c *GoogleAIClient) ListModels(ctx context.Context) (modelNames []string, err error) {
 	for model, err := range c.client.Models.All(ctx) {
 		if err != nil {
 			return nil, fmt.Errorf("error listing models: %w", err)
@@ -192,13 +197,13 @@ func (c *GeminiClient) ListModels(ctx context.Context) (modelNames []string, err
 }
 
 // Close frees the resources used by the client.
-func (c *GeminiClient) Close() error {
+func (c *GoogleAIClient) Close() error {
 	return nil
 }
 
 // SetResponseSchema constrains LLM responses to match the provided schema.
 // Calling with nil will clear the current schema.
-func (c *GeminiClient) SetResponseSchema(responseSchema *Schema) error {
+func (c *GoogleAIClient) SetResponseSchema(responseSchema *Schema) error {
 	if responseSchema == nil {
 		c.responseSchema = nil
 		return nil
@@ -213,7 +218,7 @@ func (c *GeminiClient) SetResponseSchema(responseSchema *Schema) error {
 	return nil
 }
 
-func (c *GeminiClient) GenerateCompletion(ctx context.Context, request *CompletionRequest) (CompletionResponse, error) {
+func (c *GoogleAIClient) GenerateCompletion(ctx context.Context, request *CompletionRequest) (CompletionResponse, error) {
 	log := klog.FromContext(ctx)
 
 	var config *genai.GenerateContentConfig
@@ -239,7 +244,7 @@ func (c *GeminiClient) GenerateCompletion(ctx context.Context, request *Completi
 }
 
 // StartChat starts a new chat with the model.
-func (c *GeminiClient) StartChat(systemPrompt string, model string) Chat {
+func (c *GoogleAIClient) StartChat(systemPrompt string, model string) Chat {
 	// Some values that are recommended by aistudio
 	temperature := float32(1.0)
 	topK := float32(40)
