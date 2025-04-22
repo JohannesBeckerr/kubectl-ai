@@ -14,13 +14,13 @@ done
 kubectl create namespace ns1
 kubectl create namespace ns2
 
-# Enable NetworkPolicy in both namespaces
-kubectl label namespace ns1 network-policy=enabled --overwrite
-kubectl label namespace ns2 network-policy=enabled --overwrite
-
 # Deploy httpd pods in each namespace for testing connectivity
 kubectl run httpd-ns1 -n ns1 --image=httpd:alpine
 kubectl run httpd-ns2 -n ns2 --image=httpd:alpine
+
+# Expose the httpd pods as services
+kubectl expose pod httpd-ns1 -n ns1 --name=httpd-ns1 --port=80 --target-port=80
+kubectl expose pod httpd-ns2 -n ns2 --name=httpd-ns2 --port=80 --target-port=80
 
 # Deploy test pods with curl for testing connectivity
 kubectl run curl-ns1 -n ns1 --image=curlimages/curl --command -- sleep 3600

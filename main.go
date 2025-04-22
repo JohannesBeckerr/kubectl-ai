@@ -91,7 +91,7 @@ type Options struct {
 }
 
 func (o *Options) InitDefaults() {
-	o.ProviderID = "gemini://"
+	o.ProviderID = "gemini"
 	o.ModelID = geminiModels[0]
 	// by default, confirm before executing kubectl commands that modify resources in the cluster.
 	o.SkipPermissions = false

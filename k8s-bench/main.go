@@ -183,7 +183,7 @@ func runEvals(ctx context.Context) error {
 	config.KubeConfig = expandedKubeconfig
 
 	defaultModels := map[string][]string{
-		"gemini://": {"gemini-2.5-pro-preview-03-25"},
+		"gemini": {"gemini-2.5-pro-preview-03-25"},
 	}
 
 	models := defaultModels
