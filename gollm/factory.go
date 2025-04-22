@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,11 @@ func (r *registry) RegisterProvider(id string, factoryFunc FactoryFunc) error {
 }
 
 func (r *registry) NewClient(ctx context.Context, providerID string) (Client, error) {
+	// providerID can be just an ID, for example "gemini" instead of "gemini://"
+	if !strings.Contains(providerID, "/") && !strings.Contains(providerID, ":") {
+		providerID = providerID + "://"
+	}
+
 	u, err := url.Parse(providerID)
 	if err != nil {
 		return nil, fmt.Errorf("parsing provider id %q: %w", providerID, err)
