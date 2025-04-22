@@ -32,7 +32,7 @@ func init() {
 }
 
 func azureOpenAIFactory(ctx context.Context, u *url.URL) (Client, error) {
-	return NewAzureOpenAIClient(ctx)
+	return NewAzureOpenAIClient(ctx, *u)
 }
 
 type AzureOpenAIClient struct {
@@ -41,8 +41,13 @@ type AzureOpenAIClient struct {
 
 var _ Client = &AzureOpenAIClient{}
 
-func NewAzureOpenAIClient(ctx context.Context) (*AzureOpenAIClient, error) {
+func NewAzureOpenAIClient(ctx context.Context, u url.URL) (*AzureOpenAIClient, error) {
 	azureOpenAIEndpoint := os.Getenv("AZURE_OPENAI_ENDPOINT")
+	if u.Host != "" {
+		u.Scheme = "https"
+		azureOpenAIEndpoint = u.String()
+
+	}
 	if azureOpenAIEndpoint == "" {
 		return nil, fmt.Errorf("AZURE_OPENAI_ENDPOINT environment variable not set")
 	}
