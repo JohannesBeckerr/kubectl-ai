@@ -46,7 +46,7 @@ func (t *Kubectl) FunctionDefinition() *gollm.FunctionDefinition {
 			Properties: map[string]*gollm.Schema{
 				"command": {
 					Type: gollm.TypeString,
-					Description: `The complete kubectl command to execute.  Please include the kubectl prefix as well.
+					Description: `The complete kubectl command to execute. Prefer to use heredoc syntax for multi-line commands. Please include the kubectl prefix as well.
 Example:
 user: what pods are running in the cluster?
 assistant: kubectl get pods

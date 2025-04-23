@@ -296,6 +296,7 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 
 		// If no function calls were made, we're done
 		if len(functionCalls) == 0 {
+			log.Info("No function calls were made, so most likely the task is completed, so we're done.")
 			return nil
 		}
 

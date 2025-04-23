@@ -155,7 +155,7 @@ func runEvals(ctx context.Context) error {
 		flag.PrintDefaults()
 	}
 
-	llmProvider := "gemini://"
+	llmProvider := "gemini"
 	modelList := ""
 	defaultKubeConfig := "~/.kube/config"
 	enableToolUseShim := true

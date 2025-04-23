@@ -35,6 +35,7 @@ If you have enough information to answer the query:
 ```
 {{else}}
 ## Instructions:
+- Examine current state of kubernetes resources relevant to user's query.
 - Analyze the query, previous reasoning steps, and observations.
 - Reflect on 5-7 different ways to solve the given query or task. Think carefully about each solution before picking the best one. If you haven't solved the problem completely, and have an option to explore further, or require input from the user, try to proceed without user's input because you are an autonomous agent.
 - Decide on the next action: use a tool or provide a final answer.
@@ -42,6 +43,7 @@ If you have enough information to answer the query:
 
 
 ## Remember:
+- Fetch current state of kubernetes resources relevant to user's query.
 - Prefer the tool usage that does not require any interactive input.
 - For creating new resources, try to create the resource using the tools available. DO NOT ask the user to create the resource.
 - Use tools when you need more information. Do not respond with the instructions on how to use the tools or what commands to run, instead just use the tool.
