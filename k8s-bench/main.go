@@ -71,8 +71,9 @@ type EvalConfig struct {
 }
 
 type AnalyzeConfig struct {
-	InputDir     string
-	OutputFormat string
+	InputDir          string
+	OutputFormat      string
+	IgnoreToolUseShim bool
 }
 
 func expandPath(path string) (string, error) {
@@ -240,6 +241,7 @@ func runAnalyze() error {
 	var resultsFilePath string
 	flag.StringVar(&config.InputDir, "input-dir", config.InputDir, "Directory containing evaluation results (required)")
 	flag.StringVar(&config.OutputFormat, "output-format", config.OutputFormat, "Output format (markdown or json)")
+	flag.BoolVar(&config.IgnoreToolUseShim, "ignore-tool-use-shim", true, "Ignore tool use shim")
 	flag.StringVar(&resultsFilePath, "results-filepath", "", "Optional file path to write results to")
 	flag.Parse()
 
@@ -266,7 +268,7 @@ func runAnalyze() error {
 
 	// Format and output results
 	if config.OutputFormat == "markdown" {
-		if err := printMarkdownResults(allResults, resultsFilePath); err != nil {
+		if err := printMarkdownResults(config, allResults, resultsFilePath); err != nil {
 			return fmt.Errorf("printing markdown results: %w", err)
 		}
 	} else {
@@ -313,52 +315,16 @@ func collectResults(inputDir string) ([]model.TaskResult, error) {
 	return allResults, nil
 }
 
-func printMarkdownResults(results []model.TaskResult, resultsFilePath string) error {
+func printMarkdownResults(config AnalyzeConfig, results []model.TaskResult, resultsFilePath string) error {
 	// Create a buffer to hold the output
 	var buffer strings.Builder
 
 	buffer.WriteString("# K8s-bench Evaluation Results\n\n")
 
-	// Group results by strategy
-	resultsByToolUseShim := make(map[string][]model.TaskResult)
 	allModels := make(map[string]bool) // Track all unique models
-
 	for _, result := range results {
-		var toolUseShimStr string
-		if result.LLMConfig.EnableToolUseShim {
-			toolUseShimStr = "shim_enabled"
-		} else {
-			toolUseShimStr = "shim_disabled"
-		}
-		resultsByToolUseShim[toolUseShimStr] = append(resultsByToolUseShim[toolUseShimStr], result)
 		allModels[result.LLMConfig.ModelID] = true
 	}
-
-	// ---------------------------------------------------------------------
-	// MOVED: Create the model performance summary table at the top
-	// ---------------------------------------------------------------------
-	buffer.WriteString("## Model Performance Summary\n\n")
-
-	// Table header with strategies as columns
-	toolUseShimStrs := make([]string, 0, len(resultsByToolUseShim))
-	for toolUseShimStr := range resultsByToolUseShim {
-		toolUseShimStrs = append(toolUseShimStrs, toolUseShimStr)
-	}
-
-	// Sort toolUseShimStrs for consistent output
-	sort.Strings(toolUseShimStrs)
-
-	// Create header row with success/fail columns for each toolUseShimStr
-	buffer.WriteString("| Model |")
-	for _, toolUseShimStr := range toolUseShimStrs {
-		buffer.WriteString(fmt.Sprintf(" %s Success | %s Fail |", toolUseShimStr, toolUseShimStr))
-	}
-	buffer.WriteString("\n|-------|")
-	for range toolUseShimStrs {
-		buffer.WriteString("------------|-----------|")
-	}
-	buffer.WriteString("\n")
-
 	// Convert allModels map to a sorted slice
 	models := make([]string, 0, len(allModels))
 	for model := range allModels {
@@ -366,106 +332,229 @@ func printMarkdownResults(results []model.TaskResult, resultsFilePath string) er
 	}
 	sort.Strings(models)
 
-	// Add a row for each model with success/fail counts for each strategy
-	for _, model := range models {
-		buffer.WriteString(fmt.Sprintf("| %s |", model))
-
-		for _, toolUseShimStr := range toolUseShimStrs {
-			successCount := 0
-			failCount := 0
-
-			// Count success/fail for this model and toolUseShimStr
-			for _, result := range resultsByToolUseShim[toolUseShimStr] {
-				if result.LLMConfig.ModelID == model {
-					if strings.Contains(strings.ToLower(result.Result), "success") {
-						successCount++
-					} else if result.Result != "" {
-						failCount++
-					}
-				}
-			}
-
-			buffer.WriteString(fmt.Sprintf(" %d | %d |", successCount, failCount))
-		}
-		buffer.WriteString("\n")
-	}
-
-	// Add a row showing overall totals for each toolUseShimStr
-	buffer.WriteString("| **Total** |")
-	for _, toolUseShimStr := range toolUseShimStrs {
-		successCount := 0
-		failCount := 0
-
-		for _, result := range resultsByToolUseShim[toolUseShimStr] {
-			if strings.Contains(strings.ToLower(result.Result), "success") {
-				successCount++
-			} else if result.Result != "" {
-				failCount++
-			}
-		}
-
-		buffer.WriteString(fmt.Sprintf(" %d | %d |", successCount, failCount))
-	}
-	buffer.WriteString("\n\n")
-
-	// Overall summary across all toolUseShimStrs
+	// Overall summary across all results
 	totalCount := len(results)
 	overallSuccessCount := 0
 	overallFailCount := 0
-
 	for _, result := range results {
 		if strings.Contains(strings.ToLower(result.Result), "success") {
 			overallSuccessCount++
-		} else if result.Result != "" {
+		} else {
 			overallFailCount++
 		}
 	}
 
-	buffer.WriteString("## Overall Summary\n\n")
-	buffer.WriteString(fmt.Sprintf("- Total: %d\n", totalCount))
-	buffer.WriteString(fmt.Sprintf("- Success: %d (%d%%)\n", overallSuccessCount, calculatePercentage(overallSuccessCount, totalCount)))
-	buffer.WriteString(fmt.Sprintf("- Fail: %d (%d%%)\n\n", overallFailCount, calculatePercentage(overallFailCount, totalCount)))
+	// --- Model Performance Summary ---
+	buffer.WriteString("## Model Performance Summary\n\n")
 
-	// Create a table for each toolUseShimStr
-	for toolUseShimStr, toolUseShimStrResults := range resultsByToolUseShim {
-		// Print a header for this toolUseShimStr
-		buffer.WriteString(fmt.Sprintf("## Tool Use : %s\n\n", toolUseShimStr))
+	if config.IgnoreToolUseShim {
+		// Simplified table ignoring shim status
+		buffer.WriteString("| Model | Success | Fail |\n")
+		buffer.WriteString("|-------|---------|------|\n")
 
-		// Create the table header
-		buffer.WriteString("| Task | Provider | Model | Result | Error |\n")
-		buffer.WriteString("|------|----------|-------|--------|-------|\n")
-
-		// Track success and failure counts for this strategy
-		successCount := 0
-		failCount := 0
-		totalCount := len(toolUseShimStrResults)
-
-		// Add each result as a row in the table
-		for _, result := range toolUseShimStrResults {
-			resultEmoji := "❌" // Default to failure
-			if strings.Contains(strings.ToLower(result.Result), "success") {
-				resultEmoji = "✅"
-				successCount++
-			} else if result.Result != "" {
-				failCount++
+		for _, model := range models {
+			successCount := 0
+			failCount := 0
+			for _, result := range results {
+				if result.LLMConfig.ModelID == model {
+					if strings.Contains(strings.ToLower(result.Result), "success") {
+						successCount++
+					} else {
+						failCount++
+					}
+				}
 			}
+			buffer.WriteString(fmt.Sprintf("| %s | %d | %d |\n", model, successCount, failCount))
+		}
+		// Overall totals row
+		buffer.WriteString("| **Total** |")
+		buffer.WriteString(fmt.Sprintf(" %d | %d |\n\n", overallSuccessCount, overallFailCount))
 
-			buffer.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
-				result.Task,
-				result.LLMConfig.ProviderID,
-				result.LLMConfig.ModelID,
-				resultEmoji+" "+result.Result,
-				result.Error))
+	} else {
+		// Original table grouped by tool use shim status
+		resultsByToolUseShim := make(map[string][]model.TaskResult)
+		for _, result := range results {
+			var toolUseShimStr string
+			if result.LLMConfig.EnableToolUseShim {
+				toolUseShimStr = "shim_enabled"
+			} else {
+				toolUseShimStr = "shim_disabled"
+			}
+			resultsByToolUseShim[toolUseShimStr] = append(resultsByToolUseShim[toolUseShimStr], result)
 		}
 
-		// Add summary for this toolUseShimStr
-		buffer.WriteString(fmt.Sprintf("\n**%s Summary**\n\n", toolUseShimStr))
-		buffer.WriteString(fmt.Sprintf("- Total: %d\n", totalCount))
-		buffer.WriteString(fmt.Sprintf("- Success: %d (%d%%)\n", successCount, calculatePercentage(successCount, totalCount)))
-		buffer.WriteString(fmt.Sprintf("- Fail: %d (%d%%)\n\n", failCount, calculatePercentage(failCount, totalCount)))
+		toolUseShimStrs := make([]string, 0, len(resultsByToolUseShim))
+		for toolUseShimStr := range resultsByToolUseShim {
+			toolUseShimStrs = append(toolUseShimStrs, toolUseShimStr)
+		}
+		sort.Strings(toolUseShimStrs)
+
+		// Create header row with success/fail columns for each toolUseShimStr
+		buffer.WriteString("| Model |")
+		for _, toolUseShimStr := range toolUseShimStrs {
+			buffer.WriteString(fmt.Sprintf(" %s Success | %s Fail |", toolUseShimStr, toolUseShimStr))
+		}
+		buffer.WriteString("\n|-------|")
+		for range toolUseShimStrs {
+			buffer.WriteString("------------|-----------|")
+		}
+		buffer.WriteString("\n")
+
+		// Add a row for each model with success/fail counts for each strategy
+		for _, model := range models {
+			buffer.WriteString(fmt.Sprintf("| %s |", model))
+			for _, toolUseShimStr := range toolUseShimStrs {
+				successCount := 0
+				failCount := 0
+				// Count success/fail for this model and toolUseShimStr
+				for _, result := range resultsByToolUseShim[toolUseShimStr] {
+					if result.LLMConfig.ModelID == model {
+						if strings.Contains(strings.ToLower(result.Result), "success") {
+							successCount++
+						} else {
+							failCount++
+						}
+					}
+				}
+				buffer.WriteString(fmt.Sprintf(" %d | %d |", successCount, failCount))
+			}
+			buffer.WriteString("\n")
+		}
+
+		// Add a row showing overall totals for each toolUseShimStr
+		buffer.WriteString("| **Total** |")
+		for _, toolUseShimStr := range toolUseShimStrs {
+			successCount := 0
+			failCount := 0
+			for _, result := range resultsByToolUseShim[toolUseShimStr] {
+				if strings.Contains(strings.ToLower(result.Result), "success") {
+					successCount++
+				} else {
+					failCount++
+				}
+			}
+			buffer.WriteString(fmt.Sprintf(" %d | %d |", successCount, failCount))
+		}
+		buffer.WriteString("\n\n")
 	}
 
-	// Add footer with generation time
+	// --- Overall Summary ---
+	buffer.WriteString("## Overall Summary\n\n")
+	buffer.WriteString(fmt.Sprintf("- Total Runs: %d\n", totalCount))
+	buffer.WriteString(fmt.Sprintf("- Overall Success: %d (%d%%)\n", overallSuccessCount, calculatePercentage(overallSuccessCount, totalCount)))
+	buffer.WriteString(fmt.Sprintf("- Overall Fail: %d (%d%%)\n\n", overallFailCount, calculatePercentage(overallFailCount, totalCount)))
+
+	// --- Detailed Results ---
+	if config.IgnoreToolUseShim {
+		// Group results by model for detailed view
+		resultsByModel := make(map[string][]model.TaskResult)
+		for _, result := range results {
+			resultsByModel[result.LLMConfig.ModelID] = append(resultsByModel[result.LLMConfig.ModelID], result)
+		}
+
+		for _, model := range models {
+			buffer.WriteString(fmt.Sprintf("## Model: %s\n\n", model))
+			buffer.WriteString("| Task | Provider | Result |\n")
+			buffer.WriteString("|------|----------|--------|\n")
+
+			modelSuccessCount := 0
+			modelFailCount := 0
+			modelResults := resultsByModel[model]
+			modelTotalCount := len(modelResults)
+
+			// Sort results within the model group for consistent output (e.g., by Task)
+			sort.Slice(modelResults, func(i, j int) bool {
+				return modelResults[i].Task < modelResults[j].Task
+			})
+
+			for _, result := range modelResults {
+				resultEmoji := "❌" // Default to failure
+				if strings.Contains(strings.ToLower(result.Result), "success") {
+					resultEmoji = "✅"
+					modelSuccessCount++
+				} else {
+					modelFailCount++
+				}
+
+				buffer.WriteString(fmt.Sprintf("| %s | %s | %s %s |\n",
+					result.Task,
+					result.LLMConfig.ProviderID,
+					resultEmoji, result.Result))
+			}
+
+			// Add summary for this model
+			buffer.WriteString(fmt.Sprintf("\n**%s Summary**\n\n", model))
+			buffer.WriteString(fmt.Sprintf("- Total: %d\n", modelTotalCount))
+			buffer.WriteString(fmt.Sprintf("- Success: %d (%d%%)\n", modelSuccessCount, calculatePercentage(modelSuccessCount, modelTotalCount)))
+			buffer.WriteString(fmt.Sprintf("- Fail: %d (%d%%)\n\n", modelFailCount, calculatePercentage(modelFailCount, modelTotalCount)))
+		}
+
+	} else {
+		// Original detailed results grouped by tool use shim status
+		resultsByToolUseShim := make(map[string][]model.TaskResult)
+		for _, result := range results {
+			var toolUseShimStr string
+			if result.LLMConfig.EnableToolUseShim {
+				toolUseShimStr = "shim_enabled"
+			} else {
+				toolUseShimStr = "shim_disabled"
+			}
+			resultsByToolUseShim[toolUseShimStr] = append(resultsByToolUseShim[toolUseShimStr], result)
+		}
+		toolUseShimStrs := make([]string, 0, len(resultsByToolUseShim))
+		for toolUseShimStr := range resultsByToolUseShim {
+			toolUseShimStrs = append(toolUseShimStrs, toolUseShimStr)
+		}
+		sort.Strings(toolUseShimStrs)
+
+		for _, toolUseShimStr := range toolUseShimStrs {
+			toolUseShimStrResults := resultsByToolUseShim[toolUseShimStr]
+			// Print a header for this toolUseShimStr
+			buffer.WriteString(fmt.Sprintf("## Tool Use: %s\n\n", toolUseShimStr))
+
+			// Create the table header
+			buffer.WriteString("| Task | Provider | Model | Result |\n")
+			buffer.WriteString("|------|----------|-------|--------|\n")
+
+			// Track success and failure counts for this strategy
+			successCount := 0
+			failCount := 0
+			totalCount := len(toolUseShimStrResults)
+
+			// Sort results within the group for consistent output (e.g., by Task)
+			sort.Slice(toolUseShimStrResults, func(i, j int) bool {
+				if toolUseShimStrResults[i].LLMConfig.ModelID != toolUseShimStrResults[j].LLMConfig.ModelID {
+					return toolUseShimStrResults[i].LLMConfig.ModelID < toolUseShimStrResults[j].LLMConfig.ModelID
+				}
+				return toolUseShimStrResults[i].Task < toolUseShimStrResults[j].Task
+			})
+
+			// Add each result as a row in the table
+			for _, result := range toolUseShimStrResults {
+				resultEmoji := "❌" // Default to failure
+				if strings.Contains(strings.ToLower(result.Result), "success") {
+					resultEmoji = "✅"
+					successCount++
+				} else {
+					failCount++
+				}
+
+				buffer.WriteString(fmt.Sprintf("| %s | %s | %s | %s %s |\n",
+					result.Task,
+					result.LLMConfig.ProviderID,
+					result.LLMConfig.ModelID,
+					resultEmoji, result.Result))
+			}
+
+			// Add summary for this toolUseShimStr
+			buffer.WriteString(fmt.Sprintf("\n**%s Summary**\n\n", toolUseShimStr))
+			buffer.WriteString(fmt.Sprintf("- Total: %d\n", totalCount))
+			buffer.WriteString(fmt.Sprintf("- Success: %d (%d%%)\n", successCount, calculatePercentage(successCount, totalCount)))
+			buffer.WriteString(fmt.Sprintf("- Fail: %d (%d%%)\n\n", failCount, calculatePercentage(failCount, totalCount)))
+		}
+	}
+
+	// --- Footer ---
 	buffer.WriteString("---\n\n")
 	buffer.WriteString(fmt.Sprintf("_Report generated on %s_\n", time.Now().Format("January 2, 2006 at 3:04 PM")))
 

@@ -87,6 +87,21 @@ kubectl-ai -quiet "double the capacity for the nginx app"
 
 The `kubectl-ai` will process your query, execute the appropriate kubectl commands, and provide you with the results and explanations.
 
-Note: This is not an officially supported Google product. This project is not
+## k8s-bench
+
+kubectl-ai project includes [k8s-bench](./k8s-bench/README.md) - a benchmark to evaluate performance of different LLM models on kubernetes related tasks. Here is a summary from our last run:
+
+| Model | Success | Fail |
+|-------|---------|------|
+| gemini-2.5-flash-preview-04-17 | 10 | 0 |
+| gemini-2.5-pro-preview-03-25 | 10 | 0 |
+| gemma-3-27b-it | 8 | 2 |
+| **Total** | 28 | 2 |
+
+See [full report](./k8s-bench.md) for more details.
+
+---
+
+*Note: This is not an officially supported Google product. This project is not
 eligible for the [Google Open Source Software Vulnerability Rewards
-Program](https://bughunters.google.com/open-source-security).
+Program](https://bughunters.google.com/open-source-security).*

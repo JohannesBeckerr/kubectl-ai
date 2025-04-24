@@ -2,95 +2,82 @@
 
 ## Model Performance Summary
 
-| Model | shim_disabled Success | shim_disabled Fail | shim_enabled Success | shim_enabled Fail |
-|-------|------------|-----------|------------|-----------|
-| gemini-2.0-flash | 10 | 1 | 7 | 3 |
-| gemini-2.0-flash-thinking-exp-01-21 | 0 | 0 | 10 | 1 |
-| gemma-3-27b-it | 0 | 0 | 8 | 1 |
-| gemma3:12b | 0 | 0 | 5 | 2 |
-| **Total** | 10 | 1 | 30 | 7 |
+| Model | Success | Fail |
+|-------|---------|------|
+| gemini-2.5-flash-preview-04-17 | 10 | 0 |
+| gemini-2.5-pro-preview-03-25 | 10 | 0 |
+| gemma-3-27b-it | 8 | 2 |
+| **Total** | 28 | 2 |
 
 ## Overall Summary
 
-- Total: 53
-- Success: 40 (75%)
-- Fail: 8 (15%)
+- Total Runs: 30
+- Overall Success: 28 (93%)
+- Overall Fail: 2 (6%)
 
-## Tool Use : shim_disabled
+## Model: gemini-2.5-flash-preview-04-17
 
-| Task | Provider | Model | Result | Error |
-|------|----------|-------|--------|-------|
-| configure-ingress | gemini | gemini-2.0-flash | ✅ success |  |
-| create-network-policy | gemini | gemini-2.0-flash | ❌ fail |  |
-| create-pod | gemini | gemini-2.0-flash | ✅ success |  |
-| create-pod-mount-configmaps | gemini | gemini-2.0-flash | ✅ success |  |
-| create-pod-resources-limits | gemini | gemini-2.0-flash | ✅ success |  |
-| fix-crashloop | gemini | gemini-2.0-flash | ✅ success |  |
-| fix-image-pull | gemini | gemini-2.0-flash | ✅ success |  |
-| fix-service-routing | gemini | gemini-2.0-flash | ✅ success |  |
-| list-images-for-pods | gemini | gemini-2.0-flash | ✅ success |  |
-| scale-deployment | gemini | gemini-2.0-flash | ✅ success |  |
-| scale-down-deployment | gemini | gemini-2.0-flash | ✅ success |  |
+| Task | Provider | Result |
+|------|----------|--------|
+| create-network-policy | gemini | ✅ success |
+| create-pod | gemini | ✅ success |
+| create-pod-mount-configmaps | gemini | ✅ success |
+| create-pod-resources-limits | gemini | ✅ success |
+| fix-crashloop | gemini | ✅ success |
+| fix-image-pull | gemini | ✅ success |
+| fix-service-routing | gemini | ✅ success |
+| list-images-for-pods | gemini | ✅ success |
+| scale-deployment | gemini | ✅ success |
+| scale-down-deployment | gemini | ✅ success |
 
-**shim_disabled Summary**
+**gemini-2.5-flash-preview-04-17 Summary**
 
-- Total: 11
-- Success: 10 (90%)
-- Fail: 1 (9%)
+- Total: 10
+- Success: 10 (100%)
+- Fail: 0 (0%)
 
-## Tool Use : shim_enabled
+## Model: gemini-2.5-pro-preview-03-25
 
-| Task | Provider | Model | Result | Error |
-|------|----------|-------|--------|-------|
-| configure-ingress | gemini | gemini-2.0-flash | ✅ success |  |
-| configure-ingress | gemini | gemini-2.0-flash-thinking-exp-01-21 | ✅ success |  |
-| configure-ingress | gemini | gemma-3-27b-it | ✅ success |  |
-| create-network-policy | gemini | gemini-2.0-flash | ❌ fail |  |
-| create-network-policy | gemini | gemini-2.0-flash-thinking-exp-01-21 | ❌ fail |  |
-| create-network-policy | gemini | gemma-3-27b-it | ❌ fail |  |
-| create-pod | gemini | gemini-2.0-flash | ✅ success |  |
-| create-pod | gemini | gemini-2.0-flash-thinking-exp-01-21 | ✅ success |  |
-| create-pod | gemini | gemma-3-27b-it | ✅ success |  |
-| create-pod | ollama | gemma3:12b | ✅ success |  |
-| create-pod-mount-configmaps | gemini | gemini-2.0-flash | ✅ success |  |
-| create-pod-mount-configmaps | gemini | gemini-2.0-flash-thinking-exp-01-21 | ✅ success |  |
-| create-pod-mount-configmaps | gemini | gemma-3-27b-it | ✅ success |  |
-| create-pod-mount-configmaps | ollama | gemma3:12b | ❌ fail |  |
-| create-pod-resources-limits | gemini | gemini-2.0-flash | ✅ success |  |
-| create-pod-resources-limits | gemini | gemini-2.0-flash-thinking-exp-01-21 | ✅ success |  |
-| create-pod-resources-limits | gemini | gemma-3-27b-it | ✅ success |  |
-| create-pod-resources-limits | ollama | gemma3:12b | ✅ success |  |
-| fix-crashloop | gemini | gemini-2.0-flash | ✅ success |  |
-| fix-crashloop | gemini | gemini-2.0-flash-thinking-exp-01-21 | ✅ success |  |
-| fix-crashloop | gemini | gemma-3-27b-it | ❌  | exit status 1 |
-| fix-crashloop | ollama | gemma3:12b | ❌  | exit status 1 |
-| fix-image-pull | gemini | gemini-2.0-flash | ✅ success |  |
-| fix-image-pull | gemini | gemini-2.0-flash-thinking-exp-01-21 | ✅ success |  |
-| fix-image-pull | gemini | gemma-3-27b-it | ✅ success |  |
-| fix-image-pull | ollama | gemma3:12b | ❌ fail |  |
-| fix-service-routing | gemini | gemini-2.0-flash | ✅ success |  |
-| fix-service-routing | gemini | gemini-2.0-flash-thinking-exp-01-21 | ✅ success |  |
-| fix-service-routing | gemini | gemma-3-27b-it | ❌  | exit status 1 |
-| fix-service-routing | ollama | gemma3:12b | ❌  | exit status 1 |
-| list-images-for-pods | ollama | gemma3:12b | ✅ success |  |
-| list-images-for-pods | gemini | gemini-2.0-flash | ❌  | exit status 1 |
-| list-images-for-pods | gemini | gemini-2.0-flash-thinking-exp-01-21 | ✅ success |  |
-| list-images-for-pods | gemini | gemma-3-27b-it | ✅ success |  |
-| scale-deployment | gemini | gemini-2.0-flash | ❌ fail |  |
-| scale-deployment | gemini | gemini-2.0-flash-thinking-exp-01-21 | ✅ success |  |
-| scale-deployment | gemini | gemma-3-27b-it | ✅ success |  |
-| scale-deployment | ollama | gemma3:12b | ✅ success |  |
-| scale-down-deployment | gemini | gemini-2.0-flash | ❌ fail |  |
-| scale-down-deployment | gemini | gemini-2.0-flash-thinking-exp-01-21 | ✅ success |  |
-| scale-down-deployment | gemini | gemma-3-27b-it | ✅ success |  |
-| scale-down-deployment | ollama | gemma3:12b | ✅ success |  |
+| Task | Provider | Result |
+|------|----------|--------|
+| create-network-policy | gemini | ✅ success |
+| create-pod | gemini | ✅ success |
+| create-pod-mount-configmaps | gemini | ✅ success |
+| create-pod-resources-limits | gemini | ✅ success |
+| fix-crashloop | gemini | ✅ success |
+| fix-image-pull | gemini | ✅ success |
+| fix-service-routing | gemini | ✅ success |
+| list-images-for-pods | gemini | ✅ success |
+| scale-deployment | gemini | ✅ success |
+| scale-down-deployment | gemini | ✅ success |
 
-**shim_enabled Summary**
+**gemini-2.5-pro-preview-03-25 Summary**
 
-- Total: 42
-- Success: 30 (71%)
-- Fail: 7 (16%)
+- Total: 10
+- Success: 10 (100%)
+- Fail: 0 (0%)
+
+## Model: gemma-3-27b-it
+
+| Task | Provider | Result |
+|------|----------|--------|
+| create-network-policy | gemini | ❌  |
+| create-pod | gemini | ✅ success |
+| create-pod-mount-configmaps | gemini | ✅ success |
+| create-pod-resources-limits | gemini | ✅ success |
+| fix-crashloop | gemini | ✅ success |
+| fix-image-pull | gemini | ✅ success |
+| fix-service-routing | gemini | ❌  |
+| list-images-for-pods | gemini | ✅ success |
+| scale-deployment | gemini | ✅ success |
+| scale-down-deployment | gemini | ✅ success |
+
+**gemma-3-27b-it Summary**
+
+- Total: 10
+- Success: 8 (80%)
+- Fail: 2 (20%)
 
 ---
 
-_Report generated on March 24, 2025 at 6:38 PM_
+_Report generated on April 24, 2025 at 11:42 AM_

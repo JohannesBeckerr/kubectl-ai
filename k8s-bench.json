@@ -1,44 +1,12 @@
 [
   {
-    "name": "configure-ingress",
+    "name": "create-network-policy",
     "llmConfig": {
-      "id": "tool_use_shim_disabled-gemini-gemini-2.0-flash",
+      "id": "shim_disabled-gemini-gemini-2.5-flash-preview-04-17",
       "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": false
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "configure-ingress",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "configure-ingress",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash-thinking-exp-01-21",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash-thinking-exp-01-21",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "configure-ingress",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemma-3-27b-it",
-      "provider": "gemini",
-      "model": "gemma-3-27b-it",
-      "enableToolUseShim": true
+      "model": "gemini-2.5-flash-preview-04-17",
+      "enableToolUseShim": false,
+      "quiet": true
     },
     "result": "success",
     "error": ""
@@ -46,307 +14,167 @@
   {
     "name": "create-network-policy",
     "llmConfig": {
-      "id": "tool_use_shim_disabled-gemini-gemini-2.0-flash",
+      "id": "shim_disabled-gemini-gemini-2.5-pro-preview-03-25",
       "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": false
+      "model": "gemini-2.5-pro-preview-03-25",
+      "enableToolUseShim": false,
+      "quiet": true
     },
-    "result": "fail",
+    "result": "success",
     "error": ""
   },
   {
     "name": "create-network-policy",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": true
-    },
-    "result": "fail",
-    "error": ""
-  },
-  {
-    "name": "create-network-policy",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash-thinking-exp-01-21",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash-thinking-exp-01-21",
-      "enableToolUseShim": true
-    },
-    "result": "fail",
-    "error": ""
-  },
-  {
-    "name": "create-network-policy",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemma-3-27b-it",
+      "id": "shim_enabled-gemini-gemma-3-27b-it",
       "provider": "gemini",
       "model": "gemma-3-27b-it",
-      "enableToolUseShim": true
-    },
-    "result": "fail",
-    "error": ""
-  },
-  {
-    "name": "create-pod",
-    "llmConfig": {
-      "id": "tool_use_shim_disabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": false
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash-thinking-exp-01-21",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash-thinking-exp-01-21",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemma-3-27b-it",
-      "provider": "gemini",
-      "model": "gemma-3-27b-it",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-ollama-gemma3:12b",
-      "provider": "ollama",
-      "model": "gemma3:12b",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod-mount-configmaps",
-    "llmConfig": {
-      "id": "tool_use_shim_disabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": false
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod-mount-configmaps",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod-mount-configmaps",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash-thinking-exp-01-21",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash-thinking-exp-01-21",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod-mount-configmaps",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemma-3-27b-it",
-      "provider": "gemini",
-      "model": "gemma-3-27b-it",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod-mount-configmaps",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-ollama-gemma3:12b",
-      "provider": "ollama",
-      "model": "gemma3:12b",
-      "enableToolUseShim": true
-    },
-    "result": "fail",
-    "error": ""
-  },
-  {
-    "name": "create-pod-resources-limits",
-    "llmConfig": {
-      "id": "tool_use_shim_disabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": false
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod-resources-limits",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod-resources-limits",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash-thinking-exp-01-21",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash-thinking-exp-01-21",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod-resources-limits",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemma-3-27b-it",
-      "provider": "gemini",
-      "model": "gemma-3-27b-it",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "create-pod-resources-limits",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-ollama-gemma3:12b",
-      "provider": "ollama",
-      "model": "gemma3:12b",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "fix-crashloop",
-    "llmConfig": {
-      "id": "tool_use_shim_disabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": false
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "fix-crashloop",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "fix-crashloop",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash-thinking-exp-01-21",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash-thinking-exp-01-21",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "fix-crashloop",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemma-3-27b-it",
-      "provider": "gemini",
-      "model": "gemma-3-27b-it",
-      "enableToolUseShim": true
+      "enableToolUseShim": true,
+      "quiet": true
     },
     "result": "",
-    "error": "exit status 1"
+    "error": "running command /Users/sunilarora/work/kubectl-ai/k8s-bench/tasks/create-network-policy/verify.sh: exit status 1"
+  },
+  {
+    "name": "create-pod",
+    "llmConfig": {
+      "id": "shim_disabled-gemini-gemini-2.5-flash-preview-04-17",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash-preview-04-17",
+      "enableToolUseShim": false,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "create-pod",
+    "llmConfig": {
+      "id": "shim_disabled-gemini-gemini-2.5-pro-preview-03-25",
+      "provider": "gemini",
+      "model": "gemini-2.5-pro-preview-03-25",
+      "enableToolUseShim": false,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "create-pod",
+    "llmConfig": {
+      "id": "shim_enabled-gemini-gemma-3-27b-it",
+      "provider": "gemini",
+      "model": "gemma-3-27b-it",
+      "enableToolUseShim": true,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "create-pod-mount-configmaps",
+    "llmConfig": {
+      "id": "shim_disabled-gemini-gemini-2.5-flash-preview-04-17",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash-preview-04-17",
+      "enableToolUseShim": false,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "create-pod-mount-configmaps",
+    "llmConfig": {
+      "id": "shim_disabled-gemini-gemini-2.5-pro-preview-03-25",
+      "provider": "gemini",
+      "model": "gemini-2.5-pro-preview-03-25",
+      "enableToolUseShim": false,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "create-pod-mount-configmaps",
+    "llmConfig": {
+      "id": "shim_enabled-gemini-gemma-3-27b-it",
+      "provider": "gemini",
+      "model": "gemma-3-27b-it",
+      "enableToolUseShim": true,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "create-pod-resources-limits",
+    "llmConfig": {
+      "id": "shim_disabled-gemini-gemini-2.5-flash-preview-04-17",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash-preview-04-17",
+      "enableToolUseShim": false,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "create-pod-resources-limits",
+    "llmConfig": {
+      "id": "shim_disabled-gemini-gemini-2.5-pro-preview-03-25",
+      "provider": "gemini",
+      "model": "gemini-2.5-pro-preview-03-25",
+      "enableToolUseShim": false,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "create-pod-resources-limits",
+    "llmConfig": {
+      "id": "shim_enabled-gemini-gemma-3-27b-it",
+      "provider": "gemini",
+      "model": "gemma-3-27b-it",
+      "enableToolUseShim": true,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
   },
   {
     "name": "fix-crashloop",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-ollama-gemma3:12b",
-      "provider": "ollama",
-      "model": "gemma3:12b",
-      "enableToolUseShim": true
-    },
-    "result": "",
-    "error": "exit status 1"
-  },
-  {
-    "name": "fix-image-pull",
-    "llmConfig": {
-      "id": "tool_use_shim_disabled-gemini-gemini-2.0-flash",
+      "id": "shim_disabled-gemini-gemini-2.5-flash-preview-04-17",
       "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": false
+      "model": "gemini-2.5-flash-preview-04-17",
+      "enableToolUseShim": false,
+      "quiet": true
     },
     "result": "success",
     "error": ""
   },
   {
-    "name": "fix-image-pull",
+    "name": "fix-crashloop",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash",
+      "id": "shim_disabled-gemini-gemini-2.5-pro-preview-03-25",
       "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": true
+      "model": "gemini-2.5-pro-preview-03-25",
+      "enableToolUseShim": false,
+      "quiet": true
     },
     "result": "success",
     "error": ""
   },
   {
-    "name": "fix-image-pull",
+    "name": "fix-crashloop",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash-thinking-exp-01-21",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash-thinking-exp-01-21",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "fix-image-pull",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemma-3-27b-it",
+      "id": "shim_enabled-gemini-gemma-3-27b-it",
       "provider": "gemini",
       "model": "gemma-3-27b-it",
-      "enableToolUseShim": true
+      "enableToolUseShim": true,
+      "quiet": true
     },
     "result": "success",
     "error": ""
@@ -354,65 +182,71 @@
   {
     "name": "fix-image-pull",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-ollama-gemma3:12b",
-      "provider": "ollama",
-      "model": "gemma3:12b",
-      "enableToolUseShim": true
-    },
-    "result": "fail",
-    "error": ""
-  },
-  {
-    "name": "fix-service-routing",
-    "llmConfig": {
-      "id": "tool_use_shim_disabled-gemini-gemini-2.0-flash",
+      "id": "shim_disabled-gemini-gemini-2.5-flash-preview-04-17",
       "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": false
+      "model": "gemini-2.5-flash-preview-04-17",
+      "enableToolUseShim": false,
+      "quiet": true
     },
     "result": "success",
     "error": ""
   },
   {
-    "name": "fix-service-routing",
+    "name": "fix-image-pull",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash",
+      "id": "shim_disabled-gemini-gemini-2.5-pro-preview-03-25",
       "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": true
+      "model": "gemini-2.5-pro-preview-03-25",
+      "enableToolUseShim": false,
+      "quiet": true
     },
     "result": "success",
     "error": ""
   },
   {
-    "name": "fix-service-routing",
+    "name": "fix-image-pull",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash-thinking-exp-01-21",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash-thinking-exp-01-21",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "fix-service-routing",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemma-3-27b-it",
+      "id": "shim_enabled-gemini-gemma-3-27b-it",
       "provider": "gemini",
       "model": "gemma-3-27b-it",
-      "enableToolUseShim": true
+      "enableToolUseShim": true,
+      "quiet": true
     },
-    "result": "",
-    "error": "exit status 1"
+    "result": "success",
+    "error": ""
   },
   {
     "name": "fix-service-routing",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-ollama-gemma3:12b",
-      "provider": "ollama",
-      "model": "gemma3:12b",
-      "enableToolUseShim": true
+      "id": "shim_disabled-gemini-gemini-2.5-flash-preview-04-17",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash-preview-04-17",
+      "enableToolUseShim": false,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "fix-service-routing",
+    "llmConfig": {
+      "id": "shim_disabled-gemini-gemini-2.5-pro-preview-03-25",
+      "provider": "gemini",
+      "model": "gemini-2.5-pro-preview-03-25",
+      "enableToolUseShim": false,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "fix-service-routing",
+    "llmConfig": {
+      "id": "shim_enabled-gemini-gemma-3-27b-it",
+      "provider": "gemini",
+      "model": "gemma-3-27b-it",
+      "enableToolUseShim": true,
+      "quiet": true
     },
     "result": "",
     "error": "exit status 1"
@@ -420,15 +254,16 @@
   {
     "name": "list-images-for-pods",
     "llmConfig": {
-      "id": "shim_enabled-ollama-gemma3:12b",
-      "provider": "ollama",
-      "model": "gemma3:12b",
-      "enableToolUseShim": true
+      "id": "shim_disabled-gemini-gemini-2.5-flash-preview-04-17",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash-preview-04-17",
+      "enableToolUseShim": false,
+      "quiet": true
     },
     "result": "success",
     "failures": [
       {
-        "message": "expected value \"docker.io/bitnami/mysql:8.4.4-debian-12-r4\" not found in output \"I'm ready for your next instruction or question. The provided `kubectl` output shows details about a pod named 'test-deployment-6476bff895-cx6k2'. Let me know what you'd like me to do with this information.\""
+        "message": "did not found ui.render event in trace"
       }
     ],
     "error": ""
@@ -436,15 +271,16 @@
   {
     "name": "list-images-for-pods",
     "llmConfig": {
-      "id": "tool_use_shim_disabled-gemini-gemini-2.0-flash",
+      "id": "shim_disabled-gemini-gemini-2.5-pro-preview-03-25",
       "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": false
+      "model": "gemini-2.5-pro-preview-03-25",
+      "enableToolUseShim": false,
+      "quiet": true
     },
     "result": "success",
     "failures": [
       {
-        "message": "expected value \"docker.io/bitnami/mysql:8.4.4-debian-12-r4\" not found in output \"Here are the images your pods are using:\\n```\\ngcr.io/config-management-release/otelcontribcol:v0.103.0-gke.7\\ngcr.io/config-management-release/reconciler-manager:v1.20.2-rc.2\\ngcr.io/config-management-release/otelcontribcol:v0.103.0-gke.7\\ngcr.io/config-management-release/reconciler:v1.20.2-rc.2\\ngcr.io/config-management-release/oci-sync:v1.20.2-rc.2\\ngcr.io/config-management-release/otelcontribcol:v0.103.0-gke.7\\ngcr.io/config-management-release/reconciler:v1.20.2-rc.2\\ngcr.io/config-management-release/oci-sync:v1.20.2-rc.2\\ngcr.io/config-management-release/otelcontribcol:v0.103.0-gke.7\\ngcr.io/gke-release/custom-metrics-stackdriver-adapter:v0.15.1-gke.0\\nus-docker.pkg.dev/google-samples/containers/gke/gradio-app:v1.0.3\\nghcr.io/huggingface/text-generation-inference:2.0.2\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/prometheus-engine/prometheus:v2.45.3-gmp.10-gke.0@sha256:5e35fbc8ba681cbae7a9198dcc508648c8dd3e3447b144dac10aaf16db5e7664\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/prometheus-engine/config-reloader:v0.15.1-gke.0@sha256:2c38dff1d707fe10cca0a8e965904c24912677c84028406a3dbcc651ad88c950\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/prometheus-engine/prometheus:v2.45.3-gmp.10-gke.0@sha256:5e35fbc8ba681cbae7a9198dcc508648c8dd3e3447b144dac10aaf16db5e7664\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/prometheus-engine/config-reloader:v0.15.1-gke.0@sha256:2c38dff1d707fe10cca0a8e965904c24912677c84028406a3dbcc651ad88c950\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/prometheus-engine/prometheus:v2.45.3-gmp.10-gke.0@sha256:5e35fbc8ba681cbae7a9198dcc508648c8dd3e3447b144dac10aaf16db5e7664\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/prometheus-engine/config-reloader:v0.15.1-gke.0@sha256:2c38dff1d707fe10cca0a8e965904c24912677c84028406a3dbcc651ad88c950\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/prometheus-engine/prometheus:v2.45.3-gmp.10-gke.0@sha256:5e35fbc8ba681cbae7a9198dcc508648c8dd3e3447b144dac10aaf16db5e7664\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/prometheus-engine/config-reloader:v0.15.1-gke.0@sha256:2c38dff1d707fe10cca0a8e965904c24912677c84028406a3dbcc651ad88c950\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/prometheus-engine/operator:v0.15.1-gke.0@sha256:b14b1afdf9182ece3070f8b70a1b0264e869321fd44177d545ce6e93f6fefb8a\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/kube-state-metrics:v2.14.0-gke.7@sha256:a04b8b5132e3c5148a420d93a4e9ea6d0f0faa14ac01852b23467d0573ca64b4\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20241204_2300_RC0@sha256:2b0c03b2bb9415fe38c799f9088e0c9fa6407c06e357cf767903fd16cbfc65b9\\ngcr.io/gke-release/gke-mcs-importer:v2.2.7-gke.0\\nnginx\\nnginx\\nregistry.k8s.io/ingress-nginx/controller:v1.12.0@sha256:e6b8de175acda6ca913891f0f727bca4527e797d52688cbe9fec9040d6f6b6fa\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/cilium/cilium:v1.16.6-gke.31@sha256:4b0b21b6c1ba5c4d28284e6d6027ceb5b243856c236b642d0ff8624c0c57716a\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20241015_2300_RC0@sha256:1c838e782e8825f4c635ffa212833558976f16af700fbf4fcd9cf6103350d016\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/cilium/cilium:v1.16.6-gke.31@sha256:4b0b21b6c1ba5c4d28284e6d6027ceb5b243856c236b642d0ff8624c0c57716a\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20241015_2300_RC0@sha256:1c838e782e8825f4c635ffa212833558976f16af700fbf4fcd9cf6103350d016\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/cilium/cilium:v1.16.6-gke.31@sha256:4b0b21b6c1ba5c4d28284e6d6027ceb5b243856c236b642d0ff8624c0c57716a\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20241015_2300_RC0@sha256:1c838e782e8825f4c635ffa212833558976f16af700fbf4fcd9cf6103350d016\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/cilium/cilium:v1.16.6-gke.31@sha256:4b0b21b6c1ba5c4d28284e6d6027ceb5b243856c236b642d0ff8624c0c57716a\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20241015_2300_RC0@sha256:1c838e782e8825f4c635ffa212833558976f16af700fbf4fcd9cf6103350d016\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/cluster-proportional-autoscaler:v1.9.0-gke.3@sha256:472e0b8149cd7dcd9c8a3a2a68649b225e9ad4860d7afe956dd055979a2eb82d\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/efficiency-daemon:v32.1.0-gke.0@sha256:730ea76188d686b0e6343ce3bd4b9c8f8e7db984736587cd40aca0dac9676d6b\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/efficiency-daemon:v32.1.0-gke.0@sha256:730ea76188d686b0e6343ce3bd4b9c8f8e7db984736587cd40aca0dac9676d6b\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/efficiency-daemon:v32.1.0-gke.0@sha256:730ea76188d686b0e6343ce3bd4b9c8f8e7db984736587cd40aca0dac9676d6b\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/egress-nat-controller:v0.2.15-gke.0@sha256:69e8ecac864c1bbfac6a08a75652cfcadd4343298992c9a805b6e2958207f379\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/event-exporter:v0.4.4-gke.44@sha256:70e122b177905b0c7e587edf805526f04b5821d060a9f941fec9c7ccc492467b\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/prometheus-to-sd:v0.11.12-gke.51@sha256:798127b7368b1a3a2851a6a336776739f32b0ed741d5d6ee07b97d6ac2998fa3\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcp-filestore-csi-driver-lockrelease:v1.8.0-gke.2@sha256:6643f2e98b845f31a7b0f595213b4b295a4becb106989103a781a658d52f1e07\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20241103_2300_RC0@sha256:0414d76bb198009202c165d97b646d57711461b8c8381541e2cb6989cce14f7f\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/csi-node-driver-registrar:v2.9.4-gke.29@sha256:b87f0c02a41dc0c0ed31039998640858f44263f467301b9aaf9cbf4bab8d3f5b\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcp-filestore-csi-driver:v1.8.0-gke.7@sha256:7a7fc2b62e50dd403a1bb00849a52885e51dbfa449060fb1e50dac8fc6f11193\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcp-filestore-csi-driver:v1.8.0-gke.7@sha256:7a7fc2b62e50dd403a1bb00849a52885e51dbfa449060fb1e50dac8fc6f11193\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20241103_2300_RC0@sha256:0414d76bb198009202c165d97b646d57711461b8c8381541e2cb6989cce14f7f\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/csi-node-driver-registrar:v2.9.4-gke.29@sha256:b87f0c02a41dc0c0ed31039998640858f44263f467301b9aaf9cbf4bab8d3f5b\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcp-filestore-csi-driver:v1.8.0-gke.7@sha256:7a7fc2b62e50dd403a1bb00849a52885e51dbfa449060fb1e50dac8fc6f11193\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcp-filestore-csi-driver:v1.8.0-gke.7@sha256:7a7fc2b62e50dd403a1bb00849a52885e51dbfa449060fb1e50dac8fc6f11193\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20241103_2300_RC0@sha256:0414d76bb198009202c165d97b646d57711461b8c8381541e2cb6989cce14f7f\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/csi-node-driver-registrar:v2.9.4-gke.29@sha256:b87f0c02a41dc0c0ed31039998640858f44263f467301b9aaf9cbf4bab8d3f5b\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcp-filestore-csi-driver:v1.8.0-gke.7@sha256:7a7fc2b62e50dd403a1bb00849a52885e51dbfa449060fb1e50dac8fc6f11193\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcp-filestore-csi-driver:v1.8.0-gke.7@sha256:7a7fc2b62e50dd403a1bb00849a52885e51dbfa449060fb1e50dac8fc6f11193\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20241103_2300_RC0@sha256:0414d76bb198009202c165d97b646d57711461b8c8381541e2cb6989cce14f7f\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/csi-node-driver-registrar:v2.9.4-gke.29@sha256:b87f0c02a41dc0c0ed31039998640858f44263f467301b9aaf9cbf4bab8d3f5b\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcp-filestore-csi-driver:v1.8.0-gke.7@sha256:7a7fc2b62e50dd403a1bb00849a52885e51dbfa449060fb1e50dac8fc6f11193\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcp-filestore-csi-driver:v1.8.0-gke.7@sha256:7a7fc2b62e50dd403a1bb00849a52885e51dbfa449060fb1e50dac8fc6f11193\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20241103_2300_RC0@sha256:0414d76bb198009202c165d97b646d57711461b8c8381541e2cb6989cce14f7f\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/fluent-bit:v1.8.12-gke.62@sha256:bd48755377a723a91bc3fd96f67796ba3a3023808fd69b37d97cb1aa5985d9ae\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/fluent-bit-gke-exporter:v0.27.9-gke.3@sha256:c85045c80354c2ac7931a103cc3f9d16dd08682e87383be254b37543dfcf0279\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20250106_2300_RC0@sha256:3d76420863be0cdbdf5f9a512e032d9b20ae8fd7be4b5eca22ecdb1e867f23bf\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/fluent-bit:v1.8.12-gke.62@sha256:bd48755377a723a91bc3fd96f67796ba3a3023808fd69b37d97cb1aa5985d9ae\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/fluent-bit-gke-exporter:v0.27.9-gke.3@sha256:c85045c80354c2ac7931a103cc3f9d16dd08682e87383be254b37543dfcf0279\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20250106_2300_RC0@sha256:3d76420863be0cdbdf5f9a512e032d9b20ae8fd7be4b5eca22ecdb1e867f23bf\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/fluent-bit:v1.8.12-gke.62@sha256:bd48755377a723a91bc3fd96f67796ba3a3023808fd69b37d97cb1aa5985d9ae\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/fluent-bit-gke-exporter:v0.27.9-gke.3@sha256:c85045c80354c2ac7931a103cc3f9d16dd08682e87383be254b37543dfcf0279\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20250106_2300_RC0@sha256:3d76420863be0cdbdf5f9a512e032d9b20ae8fd7be4b5eca22ecdb1e867f23bf\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/fluent-bit:v1.8.12-gke.62@sha256:bd48755377a723a91bc3fd96f67796ba3a3023808fd69b37d97cb1aa5985d9ae\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/fluent-bit-gke-exporter:v0.27.9-gke.3@sha256:c85045c80354c2ac7931a103cc3f9d16dd08682e87383be254b37543dfcf0279\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20250106_2300_RC0@sha256:3d76420863be0cdbdf5f9a512e032d9b20ae8fd7be4b5eca22ecdb1e867f23bf\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcs-fuse-csi-driver:v1.11.0-gke.0@sha256:b191abc94b64cbb02b6022c6c5fb75a607ce399580d570b17c2f32e04dec383c\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/csi-node-driver-registrar:v2.10.1-gke.29@sha256:6f22a43a1bd9bfea93713bec8810003b6ec0c5443c5fbdae39a034f6516e6d98\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20240909_2300_RC0@sha256:47e4223cd3ab56e5ad48bca2cdd5e1500889553e882a1a9e3846cec8860fe73a\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcs-fuse-csi-driver:v1.11.0-gke.0@sha256:b191abc94b64cbb02b6022c6c5fb75a607ce399580d570b17c2f32e04dec383c\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/csi-node-driver-registrar:v2.10.1-gke.29@sha256:6f22a43a1bd9bfea93713bec8810003b6ec0c5443c5fbdae39a034f6516e6d98\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20240909_2300_RC0@sha256:47e4223cd3ab56e5ad48bca2cdd5e1500889553e882a1a9e3846cec8860fe73a\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcs-fuse-csi-driver:v1.11.0-gke.0@sha256:b191abc94b64cbb02b6022c6c5fb75a607ce399580d570b17c2f32e04dec383c\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/csi-node-driver-registrar:v2.10.1-gke.29@sha256:6f22a43a1bd9bfea93713bec8810003b6ec0c5443c5fbdae39a034f6516e6d98\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20240909_2300_RC0@sha256:47e4223cd3ab56e5ad48bca2cdd5e1500889553e882a1a9e3846cec8860fe73a\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gcs-fuse-csi-driver:v1.11.0-gke.0@sha256:b191abc94b64cbb02b6022c6c5fb75a607ce399580d570b17c2f32e04dec383c\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/csi-node-driver-registrar:v2.10.1-gke.29@sha256:6f22a43a1bd9bfea93713bec8810003b6ec0c5443c5fbdae39a034f6516e6d98\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metrics-collector:20240909_2300_RC0@sha256:47e4223cd3ab56e5ad48bca2cdd5e1500889553e882a1a9e3846cec8860fe73a\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metadata-server:gke_metadata_server_20250115.00_p0@sha256:a6301b00a8c2f7091c361c6439f01e20e066aa951e04ef6195e5894b2c5dcf84\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metadata-server:gke_metadata_server_20250115.00_p0@sha256:a6301b00a8c2f7091c361c6439f01e20e066aa951e04ef6195e5894b2c5dcf84\\nus-west1-artifactregistry.gcr.io/gke-release/gke-release/gke-metadata-server:gke_metadata_server_20250115.00_p0@sha256:a6301b00a8c2f7091c361c6439f01e20e066aa951e04ef6195e5894b2c5dcf84\\nus-west1-artifactregistry.gcr.io/g\""
+        "message": "did not found ui.render event in trace"
       }
     ],
     "error": ""
@@ -452,147 +288,88 @@
   {
     "name": "list-images-for-pods",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash",
+      "id": "shim_enabled-gemini-gemma-3-27b-it",
       "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": true
-    },
-    "result": "",
-    "error": "exit status 1"
-  },
-  {
-    "name": "list-images-for-pods",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash-thinking-exp-01-21",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash-thinking-exp-01-21",
-      "enableToolUseShim": true
+      "model": "gemma-3-27b-it",
+      "enableToolUseShim": true,
+      "quiet": true
     },
     "result": "success",
     "failures": [
       {
-        "message": "expected value \"docker.io/bitnami/mysql:8.4.4-debian-12-r4\" not found in output \"It seems there are no pods running in the default namespace.  Thus, I cannot list any images for pods in the default namespace.\\n\\nIf you have pods running in a different namespace, please specify the namespace, and I can help you find the images used by pods in that namespace. For example, you could ask: 'What images are my pods running in the kube-system namespace?'\""
+        "message": "did not found ui.render event in trace"
       }
     ],
     "error": ""
   },
   {
-    "name": "list-images-for-pods",
+    "name": "scale-deployment",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemma-3-27b-it",
+      "id": "shim_disabled-gemini-gemini-2.5-flash-preview-04-17",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash-preview-04-17",
+      "enableToolUseShim": false,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "scale-deployment",
+    "llmConfig": {
+      "id": "shim_disabled-gemini-gemini-2.5-pro-preview-03-25",
+      "provider": "gemini",
+      "model": "gemini-2.5-pro-preview-03-25",
+      "enableToolUseShim": false,
+      "quiet": true
+    },
+    "result": "success",
+    "error": ""
+  },
+  {
+    "name": "scale-deployment",
+    "llmConfig": {
+      "id": "shim_enabled-gemini-gemma-3-27b-it",
       "provider": "gemini",
       "model": "gemma-3-27b-it",
-      "enableToolUseShim": true
+      "enableToolUseShim": true,
+      "quiet": true
     },
     "result": "success",
     "error": ""
   },
   {
-    "name": "scale-deployment",
+    "name": "scale-down-deployment",
     "llmConfig": {
-      "id": "tool_use_shim_disabled-gemini-gemini-2.0-flash",
+      "id": "shim_disabled-gemini-gemini-2.5-flash-preview-04-17",
       "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": false
+      "model": "gemini-2.5-flash-preview-04-17",
+      "enableToolUseShim": false,
+      "quiet": true
     },
     "result": "success",
     "error": ""
   },
   {
-    "name": "scale-deployment",
+    "name": "scale-down-deployment",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash",
+      "id": "shim_disabled-gemini-gemini-2.5-pro-preview-03-25",
       "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": true
-    },
-    "result": "fail",
-    "error": ""
-  },
-  {
-    "name": "scale-deployment",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash-thinking-exp-01-21",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash-thinking-exp-01-21",
-      "enableToolUseShim": true
+      "model": "gemini-2.5-pro-preview-03-25",
+      "enableToolUseShim": false,
+      "quiet": true
     },
     "result": "success",
     "error": ""
   },
   {
-    "name": "scale-deployment",
+    "name": "scale-down-deployment",
     "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemma-3-27b-it",
+      "id": "shim_enabled-gemini-gemma-3-27b-it",
       "provider": "gemini",
       "model": "gemma-3-27b-it",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "scale-deployment",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-ollama-gemma3:12b",
-      "provider": "ollama",
-      "model": "gemma3:12b",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "scale-down-deployment",
-    "llmConfig": {
-      "id": "tool_use_shim_disabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": false
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "scale-down-deployment",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash",
-      "enableToolUseShim": true
-    },
-    "result": "fail",
-    "error": ""
-  },
-  {
-    "name": "scale-down-deployment",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemini-2.0-flash-thinking-exp-01-21",
-      "provider": "gemini",
-      "model": "gemini-2.0-flash-thinking-exp-01-21",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "scale-down-deployment",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-gemini-gemma-3-27b-it",
-      "provider": "gemini",
-      "model": "gemma-3-27b-it",
-      "enableToolUseShim": true
-    },
-    "result": "success",
-    "error": ""
-  },
-  {
-    "name": "scale-down-deployment",
-    "llmConfig": {
-      "id": "tool_use_shim_enabled-ollama-gemma3:12b",
-      "provider": "ollama",
-      "model": "gemma3:12b",
-      "enableToolUseShim": true
+      "enableToolUseShim": true,
+      "quiet": true
     },
     "result": "success",
     "error": ""
