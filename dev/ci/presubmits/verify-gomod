@@ -25,7 +25,7 @@ dev/tasks/gomod
 
 changes=$(git status --porcelain)
 if [[ -n "${changes}" ]]; then
-  echo "FAIL: Changes detected from dev/tasks/format:"
+  echo "FAIL: Changes detected from dev/tasks/gomod:"
   git diff | head -n60
   echo "${changes}"
   exit 1
