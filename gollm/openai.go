@@ -192,13 +192,22 @@ func (cs *openAIChatSession) Send(ctx context.Context, contents ...any) (ChatRes
 	klog.V(1).InfoS("openAIChatSession.Send called", "model", cs.model, "history_len", len(cs.history))
 
 	// 1. Append user message(s) to history
-	//    Assuming contents are strings for now, based on typical agent usage.
 	for _, content := range contents {
-		if strContent, ok := content.(string); ok {
-			klog.V(2).Infof("Adding user message to history: %s", strContent)
-			cs.history = append(cs.history, openai.UserMessage(strContent))
-		} else {
-			// TODO: Handle other content types if necessary (e.g., FunctionCallResult)
+		switch c := content.(type) {
+		case string:
+			klog.V(2).Infof("Adding user message to history: %s", c)
+			cs.history = append(cs.history, openai.UserMessage(c))
+		case FunctionCallResult:
+			klog.V(2).Infof("Adding tool call result to history: Name=%s, ID=%s", c.Name, c.ID)
+			// Marshal the result map into a JSON string for the message content
+			resultJSON, err := json.Marshal(c.Result)
+			if err != nil {
+				klog.Errorf("Failed to marshal function call result: %v", err)
+				return nil, fmt.Errorf("failed to marshal function call result %q: %w", c.Name, err)
+			}
+			cs.history = append(cs.history, openai.ToolMessage(string(resultJSON), c.ID))
+		default:
+			// TODO: Handle other content types if necessary?
 			klog.Warningf("Unhandled content type in Send: %T", content)
 			return nil, fmt.Errorf("unhandled content type: %T", content)
 		}

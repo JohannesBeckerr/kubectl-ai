@@ -9,7 +9,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.9.0
 	github.com/ollama/ollama v0.5.13
-	github.com/openai/openai-go v0.1.0-beta.10
+	github.com/openai/openai-go v0.1.0-beta.10 // Reverted to latest beta
 	google.golang.org/genai v1.0.0
 	k8s.io/klog/v2 v2.130.1
 )
