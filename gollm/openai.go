@@ -144,11 +144,11 @@ func (c *OpenAIClient) ListModels(ctx context.Context) ([]string, error) {
 // --- Chat Session Implementation ---
 
 type openAIChatSession struct {
-	client             openai.Client
-	history            []openai.ChatCompletionMessageParamUnion
-	model              string
-	functionDefinitions []*FunctionDefinition // Stored in gollm format
-	tools              []openai.ChatCompletionToolParam // Stored in OpenAI format
+	client              openai.Client
+	history             []openai.ChatCompletionMessageParamUnion
+	model               string
+	functionDefinitions []*FunctionDefinition            // Stored in gollm format
+	tools               []openai.ChatCompletionToolParam // Stored in OpenAI format
 }
 
 // Ensure openAIChatSession implements the Chat interface.
@@ -187,16 +187,91 @@ func (cs *openAIChatSession) SetFunctionDefinitions(defs []*FunctionDefinition) 
 	return nil
 }
 
-// Send is not fully implemented yet.
+// Send sends the user message(s), appends to history, and gets the LLM response.
 func (cs *openAIChatSession) Send(ctx context.Context, contents ...any) (ChatResponse, error) {
-	// TODO: Implement actual Send logic using cs.client, cs.history, cs.model, cs.tools
-	return nil, errors.New("openAIChatSession.Send not implemented")
+	klog.V(1).InfoS("openAIChatSession.Send called", "model", cs.model, "history_len", len(cs.history))
+
+	// 1. Append user message(s) to history
+	//    Assuming contents are strings for now, based on typical agent usage.
+	for _, content := range contents {
+		if strContent, ok := content.(string); ok {
+			klog.V(2).Infof("Adding user message to history: %s", strContent)
+			cs.history = append(cs.history, openai.UserMessage(strContent))
+		} else {
+			// TODO: Handle other content types if necessary (e.g., FunctionCallResult)
+			klog.Warningf("Unhandled content type in Send: %T", content)
+			return nil, fmt.Errorf("unhandled content type: %T", content)
+		}
+	}
+
+	// 2. Prepare the API request
+	chatReq := openai.ChatCompletionNewParams{
+		Model:    openai.ChatModel(cs.model),
+		Messages: cs.history,
+	}
+	if len(cs.tools) > 0 {
+		chatReq.Tools = cs.tools
+		// chatReq.ToolChoice = openai.ToolChoiceAuto // Or specify if needed
+	}
+
+	// 3. Call the OpenAI API
+	klog.V(1).InfoS("Sending request to OpenAI Chat API", "model", cs.model, "messages", len(chatReq.Messages), "tools", len(chatReq.Tools))
+	completion, err := cs.client.Chat.Completions.New(ctx, chatReq)
+	if err != nil {
+		// TODO: Check if error is retryable using cs.IsRetryableError
+		klog.Errorf("OpenAI ChatCompletion API error: %v", err)
+		return nil, fmt.Errorf("OpenAI chat completion failed: %w", err)
+	}
+	klog.V(1).InfoS("Received response from OpenAI Chat API", "id", completion.ID, "choices", len(completion.Choices))
+
+	// 4. Process the response
+	if len(completion.Choices) == 0 {
+		klog.Warning("Received response with no choices from OpenAI")
+		return nil, errors.New("received empty response from OpenAI (no choices)")
+	}
+
+	// Add assistant's response (first choice) to history
+	assistantMsg := completion.Choices[0].Message
+	// Convert to param type before appending to history
+	cs.history = append(cs.history, assistantMsg.ToParam())
+	klog.V(2).InfoS("Added assistant message to history", "content_present", assistantMsg.Content != "", "tool_calls", len(assistantMsg.ToolCalls))
+
+	// Wrap the response
+	resp := &openAIChatResponse{
+		openaiCompletion: completion,
+	}
+
+	return resp, nil
 }
 
-// SendStreaming is not fully implemented yet.
+// SendStreaming sends the user message(s) and returns an iterator for the LLM response stream.
+// NOTE: Due to limitations in the openai-go v0.1.0-beta.10 library, this function
+// simulates streaming by making a single non-streaming call and returning an iterator
+// that yields the single response. This satisfies the agent's interface requirement.
 func (cs *openAIChatSession) SendStreaming(ctx context.Context, contents ...any) (ChatResponseIterator, error) {
-	// TODO: Implement actual SendStreaming logic
-	return nil, errors.New("openAIChatSession.SendStreaming not implemented")
+	klog.V(1).InfoS("openAIChatSession.SendStreaming called (simulated)", "model", cs.model)
+
+	// Call the non-streaming Send method we implemented earlier
+	singleResponse, err := cs.Send(ctx, contents...)
+	if err != nil {
+		// Send already logs errors, just wrap it
+		return nil, fmt.Errorf("simulated streaming failed during non-streaming call: %w", err)
+	}
+
+	// Return an iterator function that yields the single response once.
+	var yielded bool
+	iteratorFunc := func(yield func(ChatResponse, error) bool) {
+		if !yielded {
+			yielded = true
+			// Yield the single response. If yield returns false, stop early.
+			if !yield(singleResponse, nil) {
+				return
+			}
+		}
+		// Subsequent calls do nothing, effectively ending the stream.
+	}
+
+	return iteratorFunc, nil
 }
 
 // IsRetryableError returns false for now.
@@ -205,4 +280,102 @@ func (cs *openAIChatSession) IsRetryableError(err error) bool {
 	return false
 }
 
-// --- End Chat Session Implementation ---
+// --- Helper structs for ChatResponse interface ---
+
+type openAIChatResponse struct {
+	openaiCompletion *openai.ChatCompletion
+}
+
+var _ ChatResponse = (*openAIChatResponse)(nil)
+
+func (r *openAIChatResponse) UsageMetadata() any {
+	// Check if the main completion object and Usage exist
+	if r.openaiCompletion != nil && r.openaiCompletion.Usage.TotalTokens > 0 { // Check a field within Usage
+		return r.openaiCompletion.Usage
+	}
+	return nil
+}
+
+func (r *openAIChatResponse) Candidates() []Candidate {
+	if r.openaiCompletion == nil {
+		return nil
+	}
+	candidates := make([]Candidate, len(r.openaiCompletion.Choices))
+	for i, choice := range r.openaiCompletion.Choices {
+		candidates[i] = &openAICandidate{openaiChoice: &choice}
+	}
+	return candidates
+}
+
+type openAICandidate struct {
+	openaiChoice *openai.ChatCompletionChoice
+}
+
+var _ Candidate = (*openAICandidate)(nil)
+
+func (c *openAICandidate) Parts() []Part {
+	// Check if the choice exists before accessing Message
+	if c.openaiChoice == nil {
+		return nil
+	}
+
+	// OpenAI message can have Content AND ToolCalls
+	var parts []Part
+	if c.openaiChoice.Message.Content != "" {
+		parts = append(parts, &openAIPart{content: c.openaiChoice.Message.Content})
+	}
+	if len(c.openaiChoice.Message.ToolCalls) > 0 {
+		parts = append(parts, &openAIPart{toolCalls: c.openaiChoice.Message.ToolCalls})
+	}
+	return parts
+}
+
+// String provides a simple string representation for logging/debugging.
+func (c *openAICandidate) String() string {
+	if c.openaiChoice == nil {
+		return "<nil candidate>"
+	}
+	content := "<no content>"
+	if c.openaiChoice.Message.Content != "" {
+		content = c.openaiChoice.Message.Content
+	}
+	toolCalls := len(c.openaiChoice.Message.ToolCalls)
+	finishReason := string(c.openaiChoice.FinishReason)
+	return fmt.Sprintf("Candidate(FinishReason: %s, ToolCalls: %d, Content: %q)", finishReason, toolCalls, content)
+}
+
+type openAIPart struct {
+	content   string
+	toolCalls []openai.ChatCompletionMessageToolCall // Correct type
+}
+
+var _ Part = (*openAIPart)(nil)
+
+func (p *openAIPart) AsText() (string, bool) {
+	return p.content, p.content != ""
+}
+
+func (p *openAIPart) AsFunctionCalls() ([]FunctionCall, bool) {
+	if len(p.toolCalls) == 0 {
+		return nil, false
+	}
+
+	gollmCalls := make([]FunctionCall, len(p.toolCalls))
+	for i, tc := range p.toolCalls {
+		// Check if it's a function call by seeing if Function Name is populated
+		if tc.Function.Name == "" { // Adjusted check for function calls
+			klog.V(2).Infof("Skipping non-function tool call ID: %s", tc.ID)
+			continue
+		}
+		var args map[string]any
+		// Attempt to unmarshal arguments, ignore error for now if it fails
+		_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+
+		gollmCalls[i] = FunctionCall{
+			ID:        tc.ID, // Pass the Tool Call ID
+			Name:      tc.Function.Name,
+			Arguments: args,
+		}
+	}
+	return gollmCalls, true
+}
