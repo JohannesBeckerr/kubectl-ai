@@ -36,7 +36,7 @@ You can also use OpenAI models by setting your OpenAI API key and specifying the
 
 ```bash
 export OPENAI_API_KEY=your_openai_api_key_here
-kubectl-ai --llm-provider=openai --model=gpt-4-turbo
+kubectl-ai --llm-provider=openai --model=gpt-4.1
 ```
 
 Optionally, you can set a custom OpenAI API endpoint:
