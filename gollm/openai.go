@@ -130,15 +130,14 @@ func (c *OpenAIClient) GenerateCompletion(ctx context.Context, req *CompletionRe
 // SetResponseSchema is not implemented yet.
 func (c *OpenAIClient) SetResponseSchema(schema *Schema) error {
 	klog.Warning("OpenAIClient.SetResponseSchema is not implemented yet")
-	return errors.New("OpenAIClient SetResponseSchema not implemented")
+	return nil
 }
 
 // ListModels is not implemented yet.
 func (c *OpenAIClient) ListModels(ctx context.Context) ([]string, error) {
 	// TODO: Implement listing OpenAI models using c.client
 	klog.Warning("OpenAIClient.ListModels is not implemented yet")
-	// Return a hardcoded list for now, similar to main.go
-	return []string{"gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"}, nil
+	return []string{}, nil
 }
 
 // --- Chat Session Implementation ---
