@@ -102,7 +102,7 @@ kubectl-ai -quiet "create a deployment named nginx with 3 replicas using the ngi
 kubectl-ai -quiet "double the capacity for the nginx app"
 
 # Using OpenAI instead of Gemini
-kubectl-ai --llm-provider=openai --model=gpt-4-turbo -quiet "scale the nginx deployment to 5 replicas"
+kubectl-ai --llm-provider=openai --model=gpt-4.1 -quiet "scale the nginx deployment to 5 replicas"
 ```
 
 The `kubectl-ai` will process your query, execute the appropriate kubectl commands, and provide you with the results and explanations.
