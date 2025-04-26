@@ -51,12 +51,6 @@ var geminiModels = []string{
 	"gemini-2.0-flash",
 }
 
-// OpenAI models
-var openaiModels = []string{
-	"gpt-4.1",
-	"o4-mini",
-}
-
 func main() {
 	ctx := context.Background()
 

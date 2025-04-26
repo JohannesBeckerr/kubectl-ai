@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 
 	openai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -65,6 +66,16 @@ func (c *OpenAIClient) Close() error {
 
 // StartChat starts a new chat session.
 func (c *OpenAIClient) StartChat(systemPrompt, model string) Chat {
+	originalModel := model // Keep track of the original for logging
+	// Default to gpt-4o if no model is specified or if it doesn't look like a known OpenAI prefix
+	if model == "" || (!strings.HasPrefix(model, "gpt-") && !strings.HasPrefix(model, "o-")) {
+		model = "gpt-4o"
+		if originalModel == "" {
+			klog.V(1).Info("No model specified, defaulting to gpt-4o")
+		} else {
+			klog.V(1).Infof("Model '%s' does not match expected prefix, defaulting to gpt-4o", originalModel)
+		}
+	}
 	klog.V(1).Infof("Starting new OpenAI chat session with model: %s", model)
 	// Initialize history with system prompt if provided
 	history := []openai.ChatCompletionMessageParamUnion{}
