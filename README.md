@@ -22,10 +22,27 @@ $ sudo mv kubectl-ai /usr/local/bin/
 
 ### Invoking
 
+#### Using Gemini (Default)
+
 Set your Gemini API key as an environment variable. If you don't have a key, get one from [Google AI Studio](https://aistudio.google.com).
 
 ```bash
 export GEMINI_API_KEY=your_api_key_here
+```
+
+#### Using OpenAI
+
+You can also use OpenAI models by setting your OpenAI API key and specifying the provider:
+
+```bash
+export OPENAI_API_KEY=your_openai_api_key_here
+kubectl-ai --llm-provider=openai --model=gpt-4.1
+```
+
+Optionally, you can set a custom OpenAI API endpoint:
+
+```bash
+export OPENAI_ENDPOINT=https://your-custom-endpoint.com/v1
 ```
 
 Run interactively:
@@ -83,6 +100,9 @@ kubectl-ai -quiet "create a deployment named nginx with 3 replicas using the ngi
 
 # Troubleshoot issues
 kubectl-ai -quiet "double the capacity for the nginx app"
+
+# Using OpenAI instead of Gemini
+kubectl-ai --llm-provider=openai --model=gpt-4.1 -quiet "scale the nginx deployment to 5 replicas"
 ```
 
 The `kubectl-ai` will process your query, execute the appropriate kubectl commands, and provide you with the results and explanations.
