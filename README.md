@@ -12,7 +12,7 @@ First, ensure that kubectl is installed and configured.
 
 1. Download the latest release from the [releases page](https://github.com/GoogleCloudPlatform/kubectl-ai/releases/latest) for your target machine.
 
-2. Untar the binary, make it executable and move it to a directory included in your $PATH (as shown below).
+2. Untar the release, make the binary executable and move it to a directory in your $PATH (as shown below).
 
 ```shell
 $ tar -zxvf kubectl-ai_Darwin_arm64.tar.gz
@@ -20,7 +20,7 @@ $ chmod a+x kubectl-ai
 $ sudo mv kubectl-ai /usr/local/bin/
 ```
 
-### Invoking
+### Usage
 
 #### Using Gemini (Default)
 
@@ -28,6 +28,30 @@ Set your Gemini API key as an environment variable. If you don't have a key, get
 
 ```bash
 export GEMINI_API_KEY=your_api_key_here
+kubectl-ai
+
+# Use different gemini model
+kubectl-ai --model gemini-2.5-pro-exp-03-25
+
+# Use 2.5 flash (faster) model
+kubectl-ai --quiet --model gemini-2.5-flash-preview-04-17 "check logs for nginx app in hello namespace"
+```
+
+#### Using AI models running locally (ollama or llamacpp)
+
+You can use `kubectl-ai` with AI models running locally. `kubectl-ai` supports [ollama](https://ollama.com/) and [llama.cpp](https://github.com/ggml-org/llama.cpp) to use the AI models running locally.
+
+An example of using Google's `gemma3` model with `ollama`:
+
+```shell
+# assuming ollama is already running and you have pulled one of the gemma models
+# ollama pull gemma3:12b-it-qat
+
+# enable-tool-use-shim because models require special prompting to enable tool calling
+kubectl-ai --llm-provider ollama --model gemma3:12b-it-qat --enable-tool-use-shim
+
+# you can use `models` command to discover the locally available models
+>> models
 ```
 
 #### Using OpenAI
@@ -39,11 +63,7 @@ export OPENAI_API_KEY=your_openai_api_key_here
 kubectl-ai --llm-provider=openai --model=gpt-4.1
 ```
 
-Optionally, you can set a custom OpenAI API endpoint:
-
-```bash
-export OPENAI_ENDPOINT=https://your-custom-endpoint.com/v1
-```
+* Note: `kubectl-ai` supports AI models from `gemini`, `vertexai`,  `azure-openai`, `openai` and local LLM providers such as `ollama` and `llamacpp`.
 
 Run interactively:
 
