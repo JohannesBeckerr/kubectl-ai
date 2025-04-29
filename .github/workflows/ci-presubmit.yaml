@@ -35,6 +35,16 @@ jobs:
       - name: "Run dev/ci/presubmits/go-build"
         run: |
           ./dev/ci/presubmits/go-build
+      - name: "Upload k8s-bench binary for eval"
+        uses: actions/upload-artifact@v4
+        with:
+          path: ./k8s-bench
+          name: k8s-bench
+      - name: "Upload k8s-bench binary for eval"
+        uses: actions/upload-artifact@v4
+        with:
+          path: .
+          name: kubectl-ai
 
 
   go-vet:
@@ -88,6 +98,39 @@ jobs:
         run: |
           ./dev/ci/presubmits/verify-gomod
 
+  run-eval-tasks:
+    needs: ["go-build"]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create k8s Kind Cluster
+        uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # @v1.12.0
+        with:
+          cluster_name: ${{ github.workflow }}
+      - name: Download Go binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: k8s-bench
+          path: .
+      - name: Download Go binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: kubectl-ai
+          path: .
+      - name: Debug kind and kubectl
+        run: |
+          kubectl cluster-info
+          kubectl config view
+          echo "KUBECONFIG=$KUBECONFIG"
+      - name: Install ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+      - name: Download ollama model
+        run: ollama pull gemma3:1b
+      - name: Spin up ollama
+        run: ollama serve 
+      - name: Run prompt
+        run: ./k8s-bench run --agent-bin ./kubectl-ai --task-pattern scale --kubeconfig $KUBECONFIG
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
