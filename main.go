@@ -179,7 +179,7 @@ func run(ctx context.Context) error {
 	klog.InitFlags(nil)
 
 	flag.Set("logtostderr", "false") // disable logging to stderr
-	flag.Set("log_file", "/tmp/kubectl-ai.log")
+	flag.Set("log_file", filepath.Join(os.TempDir(), "kubectl-ai.log"))
 
 	flag.Parse()
 
