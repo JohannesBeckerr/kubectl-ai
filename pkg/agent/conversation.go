@@ -271,7 +271,8 @@ func (a *Conversation) RunOneRound(ctx context.Context, query string) error {
 
 			ctx := journal.ContextWithRecorder(ctx, a.Recorder)
 			output, err := toolCall.InvokeTool(ctx, tools.InvokeToolOptions{
-				WorkDir: a.workDir,
+				Kubeconfig: a.Kubeconfig,
+				WorkDir:    a.workDir,
 			})
 			if err != nil {
 				return fmt.Errorf("executing action: %w", err)
