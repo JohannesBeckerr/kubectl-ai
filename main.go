@@ -156,7 +156,7 @@ func init() {
 	f.StringVar(&tracePath, "trace-path", "trace.log", "path to the trace file")
 	f.BoolVar(&removeWorkDir, "remove-workdir", false, "remove the temporary working directory after execution")
 
-	// This part is gotten from InitDefaults() function, I think these could be merged also gotten from ENV variables
+	// This part is gotten from Options struct? May be put all of them there?
 	f.StringVar(&opt.ProviderID, "llm-provider", opt.ProviderID, "language model provider")
 	f.StringVar(&opt.ModelID, "model", opt.ModelID, "language model e.g. gemini-2.0-flash-thinking-exp-01-21, gemini-2.0-flash")
 	f.BoolVar(&opt.SkipPermissions, "skip-permissions", opt.SkipPermissions, "(dangerous) skip asking for confirmation before executing kubectl commands that modify resources")
