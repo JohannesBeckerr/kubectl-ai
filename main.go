@@ -209,6 +209,14 @@ func runCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading config file: %w", err)
 	}
 
+	// override Options from viper (flags or env)
+	opt.ProviderID = viper.GetString("llm-provider")
+	opt.ModelID = viper.GetString("model")
+	opt.SkipPermissions = viper.GetBool("skip-permissions")
+	opt.MCPServer = viper.GetBool("mcp-server")
+	opt.EnableToolUseShim = viper.GetBool("enable-tool-use-shim")
+	opt.Quiet = viper.GetBool("quiet")
+
 	// Validation of flag values passed by user, use this helper method
 	_, err := isFlagValueCorrect(opt.ModelID, geminiModels)
 	if err != nil {
