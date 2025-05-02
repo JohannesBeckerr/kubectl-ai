@@ -24,7 +24,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"strings"
 	"syscall"
 
@@ -47,25 +46,15 @@ var (
 	date    = "unknown"
 )
 
-var (
-	// CLI related
-	opt                    = Options{}
-	maxIterations          int
-	kubeconfigPath         string
-	promptTemplateFilePath string
-	tracePath              string
-	removeWorkDir          bool
-	geminiModels           = []string{
-		"gemini-2.5-pro-preview-03-25",
-		"gemini-2.0-flash",
-	}
+const viperEnvPrefix = "KUBECTL_AI"
 
-	rootCmd = &cobra.Command{
-		Use:   "kubectl-ai",
-		Short: "Run the kubectl-ai agent",
-		RunE:  runCmd,
-	}
-)
+var rootCmd = &cobra.Command{
+	Use:   "kubectl-ai",
+	Short: "A CLI tool to interact with Kubernetes using natural language",
+	Long:  "kubectl-ai is a command-line tool that allows you to interact with your Kubernetes cluster using natural language queries. It leverages large language models to understand your intent and translate it into kubectl",
+	Args:  cobra.MaximumNArgs(1), // Only one positional arg is allowed.
+	RunE:  runCmd,
+}
 
 type Options struct {
 	ProviderID string `json:"llmProvider,omitempty"`
@@ -79,19 +68,31 @@ type Options struct {
 	EnableToolUseShim bool `json:"enableToolUseShim,omitempty"`
 	// Quiet flag indicates if the agent should run in non-interactive mode.
 	// It requires a query to be provided as a positional argument.
-	Quiet     bool `json:"quiet,omitempty"`
-	MCPServer bool
+	Quiet                  bool   `json:"quiet,omitempty"`
+	MCPServer              bool   `json:"mcpServer,omitempty"`
+	MaxIterations          int    `json:"maxIterations,omitempty"`
+	KubeConfigPath         string `json:"kubeConfigPath,omitempty"`
+	PromptTemplateFilePath string `json:"promptTemplateFilePath,omitempty"`
+	TracePath              string `json:"tracePath,omitempty"`
+	RemoveWorkDir          bool   `json:"removeWorkDir,omitempty"`
 }
 
-func (o *Options) InitDefaults() {
+func (o *Options) OptionsInitial() {
 	o.ProviderID = "gemini"
-	o.ModelID = geminiModels[0]
+	o.ModelID = "gemini-2.5-pro-preview-03-25"
 	// by default, confirm before executing kubectl commands that modify resources in the cluster.
 	o.SkipPermissions = false
 	o.MCPServer = false
 	// We now default to our strongest model (gemini-2.5-pro-exp-03-25) which supports tool use natively.
 	// so we don't need shim.
 	o.EnableToolUseShim = false
+	o.Quiet = false
+	o.MCPServer = false
+	o.MaxIterations = 20
+	o.KubeConfigPath = ""
+	o.PromptTemplateFilePath = ""
+	o.TracePath = "trace.log"
+	o.RemoveWorkDir = false
 }
 
 func (o *Options) LoadConfiguration(b []byte) error {
@@ -145,35 +146,6 @@ func (o *Options) LoadConfigurationFile() error {
 	return nil
 }
 
-func init() {
-	// init logic
-	opt.InitDefaults()
-
-	f := rootCmd.Flags()
-	f.IntVar(&maxIterations, "max-iterations", 20, "maximum number of iterations agent will try before giving up")
-	f.StringVar(&kubeconfigPath, "kubeconfig-path", "", "path to kubeconfig file")
-	f.StringVar(&promptTemplateFilePath, "prompt-template-file-path", "", "path to custom prompt template file")
-	f.StringVar(&tracePath, "trace-path", "trace.log", "path to the trace file")
-	f.BoolVar(&removeWorkDir, "remove-workdir", false, "remove the temporary working directory after execution")
-
-	// This part is gotten from Options struct? May be put all of them there?
-	f.StringVar(&opt.ProviderID, "llm-provider", opt.ProviderID, "language model provider")
-	f.StringVar(&opt.ModelID, "model", opt.ModelID, "language model e.g. gemini-2.0-flash-thinking-exp-01-21, gemini-2.0-flash")
-	f.BoolVar(&opt.SkipPermissions, "skip-permissions", opt.SkipPermissions, "(dangerous) skip asking for confirmation before executing kubectl commands that modify resources")
-	f.BoolVar(&opt.MCPServer, "mcp-server", opt.MCPServer, "run in MCP server mode")
-	f.BoolVar(&opt.EnableToolUseShim, "enable-tool-use-shim", opt.EnableToolUseShim, "enable tool use shim")
-	f.BoolVar(&opt.Quiet, "quiet", opt.Quiet, "run in non-interactive mode, requires a query to be provided as a positional argument")
-
-	// viper binds and env var prefixes
-	err := viper.BindPFlags(f)
-	if err != nil {
-		print(fmt.Errorf("failed to bind viper flags"))
-	}
-	viper.SetEnvPrefix("KUBECTL_AI")
-	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-	viper.AutomaticEnv()
-}
-
 func main() {
 	ctx := context.Background()
 
@@ -187,101 +159,95 @@ func main() {
 		os.Exit(0)
 	}()
 
+	var opt Options
+	opt.OptionsInitial()
+
+	if err := bindCLIFlagsToViper(opt); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	setupViperEnv()
+
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
+func bindCLIFlagsToViper(opt Options) error {
+	f := rootCmd.Flags()
+	f.IntVar(&opt.MaxIterations, "max-iterations", opt.MaxIterations, "maximum number of iterations agent will try before giving up")
+	f.StringVar(&opt.KubeConfigPath, "kubeconfig-path", opt.KubeConfigPath, "path to kubeconfig file")
+	f.StringVar(&opt.PromptTemplateFilePath, "prompt-template-file-path", opt.PromptTemplateFilePath, "path to custom prompt template file")
+	f.StringVar(&opt.TracePath, "trace-path", opt.TracePath, "path to the trace file")
+	f.BoolVar(&opt.RemoveWorkDir, "remove-workdir", opt.RemoveWorkDir, "remove the temporary working directory after execution")
+
+	f.StringVar(&opt.ProviderID, "llm-provider", opt.ProviderID, "language model provider")
+	f.StringVar(&opt.ModelID, "model", opt.ModelID, "language model e.g. gemini-2.0-flash-thinking-exp-01-21, gemini-2.0-flash")
+	f.BoolVar(&opt.SkipPermissions, "skip-permissions", opt.SkipPermissions, "(dangerous) skip asking for confirmation before executing kubectl commands that modify resources")
+	f.BoolVar(&opt.MCPServer, "mcp-server", opt.MCPServer, "run in MCP server mode")
+	f.BoolVar(&opt.EnableToolUseShim, "enable-tool-use-shim", opt.EnableToolUseShim, "enable tool use shim")
+	f.BoolVar(&opt.Quiet, "quiet", opt.Quiet, "run in non-interactive mode, requires a query to be provided as a positional argument")
+
+	// viper binds and env var prefixes
+	err := viper.BindPFlags(f)
+	if err != nil {
+		return fmt.Errorf("failed to bind viper flags")
+	}
+
+	return nil
+}
+
+func setupViperEnv() {
+	viper.SetEnvPrefix(viperEnvPrefix)
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
+}
+
 func runCmd(cmd *cobra.Command, args []string) error {
-	// Retrieving the context from cmd which passed in init()
+	// Retrieving the context from cobra
 	ctx := cmd.Context()
 
-	// pull in flags/env
-	maxIterations = viper.GetInt("max-iterations")
-	kubeconfigPath = viper.GetString("kubeconfig-path")
-	promptTemplateFilePath = viper.GetString("prompt-template-file-path")
-	tracePath = viper.GetString("trace-path")
-	removeWorkDir = viper.GetBool("remove-workdir")
+	var opt Options
 
-	// Load YAML config values
+	// load YAML config values
 	if err := opt.LoadConfigurationFile(); err != nil {
-		return fmt.Errorf("loading config file: %w", err)
+		return fmt.Errorf("failed to load config file: %w", err)
 	}
 
-	// override Options from viper (flags or env)
-	opt.ProviderID = viper.GetString("llm-provider")
-	opt.ModelID = viper.GetString("model")
-	opt.SkipPermissions = viper.GetBool("skip-permissions")
-	opt.MCPServer = viper.GetBool("mcp-server")
-	opt.EnableToolUseShim = viper.GetBool("enable-tool-use-shim")
-	opt.Quiet = viper.GetBool("quiet")
+	// populate Options either from CLI flags or ENV vars
+	populateOptionsFromViper(&opt)
 
-	// Validation of flag values passed by user, use this helper method
-	_, err := isFlagValueCorrect(opt.ModelID, geminiModels)
-	if err != nil {
-		return fmt.Errorf("'%s' is not a valid value", opt.ModelID)
+	// add commandline flags for logging
+	klog.InitFlags(nil)
+	defer klog.Flush()
 
 
-	}
-
-
-	// Do this early, before the third-party code logs anything.
+	// do this early, before the third-party code logs anything.
 	redirectStdLogToKlog()
 
-	// Handle kubeconfig with priority: flag/env > KUBECONFIG > default path
-	if kubeconfigPath == "" {
-		p, err := getDefaultKubeConfigPath()
-		if err != nil {
-			return fmt.Errorf("failed to get default kubeconfig path: %w", err)
-		}
-		kubeconfigPath = p
+	// resolve kubeconfig path with priority: flag/env > KUBECONFIG > default path
+	if err := resolveKubeConfigPath(&opt); err != nil {
+		return fmt.Errorf("failed to resolve kubeconfig path: %w", err)
 	}
 
 	if opt.MCPServer {
-		workDir := filepath.Join(os.TempDir(), "kubectl-ai-mcp")
-		if err := os.MkdirAll(workDir, 0755); err != nil {
-			return fmt.Errorf("error creating work directory: %w", err)
+		if err := startMCPServer(ctx, opt); err != nil {
+			return fmt.Errorf("failed to start MCP server: %w", err)
 		}
-		mcpServer, err := newKubectlMCPServer(ctx, kubeconfigPath, tools.Default(), workDir)
-		if err != nil {
-			return fmt.Errorf("creating mcp server: %w", err)
-		}
-		return mcpServer.Serve(ctx)
 	}
 
-	// Check if stdin has data (is not a terminal)
-	stdinInfo, _ := os.Stdin.Stat()
-	stdinHasData := (stdinInfo.Mode() & os.ModeCharDevice) == 0
-	var queryFromCmd string
+	// After reading stdin, it is consumed
+	hasStdInData, err := hasStdInData()
+	if err != nil {
+		return fmt.Errorf("failed to check if stdin has data: %w", err)
+	}
 
-	switch {
-	// Handle positional arguments and stdin
-	case len(args) > 1:
-		return fmt.Errorf("only one positional argument allowed")
-	case stdinHasData:
-		var b strings.Builder
-		// If we have a positional argument, use it as a prefix
-		if len(args) == 1 {
-			b.WriteString(args[0])
-			b.WriteString("\n")
-		}
-		// Read the rest from stdin
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			b.WriteString(scanner.Text())
-			b.WriteString("\n")
-		}
-		if err := scanner.Err(); err != nil {
-			return fmt.Errorf("reading stdin: %w", err)
-		}
-		queryFromCmd = strings.TrimSpace(b.String())
-		if queryFromCmd == "" {
-			return fmt.Errorf("no query provided from stdin")
-		}
-		// Use the positional argument as a query
-	case len(args) == 1:
-		queryFromCmd = args[0]
+	// Handles positional args or stdin
+	queryFromCmd, err := resolveQueryInput(hasStdInData, args)
+	if err != nil {
+		return fmt.Errorf("failed to resolve query input %w", err)
 	}
 
 	klog.Info("Application started", "pid", os.Getpid())
@@ -293,8 +259,9 @@ func runCmd(cmd *cobra.Command, args []string) error {
 	defer llmClient.Close()
 
 	var recorder journal.Recorder
-	if tracePath != "" {
-		fileRecorder, err := journal.NewFileRecorder(tracePath)
+	// CHECK: By default it is set trace.log. It will never be empty string.
+	if opt.TracePath != "" {
+		fileRecorder, err := journal.NewFileRecorder(opt.TracePath)
 		if err != nil {
 			return fmt.Errorf("creating trace recorder: %w", err)
 		}
@@ -309,7 +276,11 @@ func runCmd(cmd *cobra.Command, args []string) error {
 	doc := ui.NewDocument()
 
 	// since stdin is already consumed, we use TTY for taking input from user
-	useTTYForInput := stdinHasData
+	useTTYForInput := hasStdInData
+	if err != nil {
+		return fmt.Errorf("failed to check if stdin has data: %w", err)
+	}
+
 	u, err := ui.NewTerminalUI(doc, recorder, useTTYForInput)
 	if err != nil {
 		return err
@@ -317,13 +288,13 @@ func runCmd(cmd *cobra.Command, args []string) error {
 
 	conversation := &agent.Conversation{
 		Model:              opt.ModelID,
-		Kubeconfig:         kubeconfigPath,
+		Kubeconfig:         opt.KubeConfigPath,
 		LLM:                llmClient,
-		MaxIterations:      maxIterations,
-		PromptTemplateFile: promptTemplateFilePath,
+		MaxIterations:      opt.MaxIterations,
+		PromptTemplateFile: opt.PromptTemplateFilePath,
 		Tools:              tools.Default(),
 		Recorder:           recorder,
-		RemoveWorkDir:      removeWorkDir,
+		RemoveWorkDir:      opt.RemoveWorkDir,
 		SkipPermissions:    opt.SkipPermissions,
 		EnableToolUseShim:  opt.EnableToolUseShim,
 	}
@@ -471,25 +442,108 @@ func (writer klogWriter) Write(data []byte) (n int, err error) {
 	return len(data), nil
 }
 
-func getDefaultKubeConfigPath() (string, error) {
-	userHomeDir := ""
-	if env := os.Getenv("KUBECONFIG"); env != "" {
-		return env, nil
-	} else {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return home, fmt.Errorf("failed to to user home dir: %w", err)
-		}
-		userHomeDir = home
-	}
+func hasStdInData() (bool, error) {
+	hasData := false
 
-	return filepath.Join(userHomeDir, ".kube", "config"), nil
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return hasData, fmt.Errorf("checking stdin: %w", err)
+	}
+	hasData = (stat.Mode() & os.ModeCharDevice) == 0
+
+	return hasData, nil
 }
 
-// Reuseables
-func isFlagValueCorrect(val string, allowed []string) (bool, error) {
-	if slices.Contains(allowed, val) {
-		return true, nil
+// resolveQueryInput determines the query input from positional args and/or stdin.
+// It supports:
+// - 1 positional arg only -> kubectl-ai "get pods"
+// - stdin only -> echo "get pods" | kubectl-ai
+// - 1 positional arg + stdin (combined) -> kubectl-ai get <<< "pods" or kubectl-ai "get" <<< "pods"
+// As default no positional arg nor stdin
+func resolveQueryInput(hasStdInData bool, args []string) (string, error) {
+	switch {
+	case len(args) == 1 && !hasStdInData:
+		// Use argument directly
+		return args[0], nil
+
+	case len(args) == 1 && hasStdInData:
+		// Combine arg + stdin
+		var b strings.Builder
+		b.WriteString(args[0])
+		b.WriteString("\n")
+
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			b.WriteString(scanner.Text())
+			b.WriteString("\n")
+		}
+		if err := scanner.Err(); err != nil {
+			return "", fmt.Errorf("reading stdin: %w", err)
+		}
+		query := strings.TrimSpace(b.String())
+		if query == "" {
+			return "", fmt.Errorf("no query provided from stdin")
+		}
+		return query, nil
+
+	case len(args) == 0 && hasStdInData:
+		// Read stdin only
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", fmt.Errorf("reading stdin: %w", err)
+		}
+		query := strings.TrimSpace(string(b))
+		if query == "" {
+			return "", fmt.Errorf("no query provided from stdin")
+		}
+		return query, nil
+
+	default:
+		// Case: No input at all — return empty string, no error
+		return "", nil
 	}
-	return false, fmt.Errorf("value '%s' is not allowed", val)
+}
+
+func populateOptionsFromViper(opt *Options) {
+	opt.ProviderID = viper.GetString("llm-provider")
+	opt.ModelID = viper.GetString("model")
+	opt.SkipPermissions = viper.GetBool("skip-permissions")
+	opt.MCPServer = viper.GetBool("mcp-server")
+	opt.EnableToolUseShim = viper.GetBool("enable-tool-use-shim")
+	opt.Quiet = viper.GetBool("quiet")
+	opt.MaxIterations = viper.GetInt("max-iterations")
+	opt.KubeConfigPath = viper.GetString("kubeconfig-path")
+	opt.PromptTemplateFilePath = viper.GetString("prompt-template-file-path")
+	opt.TracePath = viper.GetString("trace-path")
+	opt.RemoveWorkDir = viper.GetBool("remove-workdir")
+
+}
+
+func resolveKubeConfigPath(opt *Options) error {
+	switch {
+	case opt.KubeConfigPath != "":
+		// Already set from flag or viper env
+	case os.Getenv("KUBECONFIG") != "":
+		opt.KubeConfigPath = os.Getenv("KUBECONFIG")
+	default:
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get user home directory: %w", err)
+		}
+		opt.KubeConfigPath = filepath.Join(home, ".kube", "config")
+	}
+
+	return nil
+}
+
+func startMCPServer(ctx context.Context, opt Options) error {
+	workDir := "/tmp/kubectl-ai-mcp"
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		return fmt.Errorf("error creating work directory: %w", err)
+	}
+	mcpServer, err := newKubectlMCPServer(ctx, opt.KubeConfigPath, tools.Default(), workDir)
+	if err != nil {
+		return fmt.Errorf("creating mcp server: %w", err)
+	}
+	return mcpServer.Serve(ctx)
 }
