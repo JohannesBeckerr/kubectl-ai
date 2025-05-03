@@ -91,7 +91,7 @@ func (o *Options) OptionsInitial() {
 	o.MaxIterations = 20
 	o.KubeConfigPath = ""
 	o.PromptTemplateFilePath = ""
-	o.TracePath = "trace.log"
+	o.TracePath = filepath.Join(os.TempDir(), "kubectl-ai-trace.txt")
 	o.RemoveWorkDir = false
 }
 
