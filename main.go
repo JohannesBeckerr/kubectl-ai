@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -152,6 +153,25 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
+	// klog setup must happen before Cobra parses any flags
+	// add commandline flags for logging
+	klog.InitFlags(nil)
+
+	// Config for logs:
+	// — file-only:
+	// flag.Set("logtostderr", "false")
+	// flag.Set("log-file", "/tmp/kubectl-ai.log")
+	//
+	// — or stderr-only: Which is default of klog.
+	// flag.Set("logtostderr", "true")
+
+	flag.Set("logtostderr", "false")
+	flag.Set("log_file", "/tmp/kubectl-ai.log")
+
+	// cobra has to know that we pass pass flags with flag lib, otherwise it creates conflict with flags.parse() method
+	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
+	defer klog.Flush()
+
 	go func() {
 		sig := <-sigCh
 		fmt.Fprintf(os.Stderr, "Received signal, shutting down... %s\n", sig)
@@ -218,11 +238,6 @@ func runCmd(cmd *cobra.Command, args []string) error {
 
 	// populate Options either from CLI flags or ENV vars
 	populateOptionsFromViper(&opt)
-
-	// add commandline flags for logging
-	klog.InitFlags(nil)
-	defer klog.Flush()
-
 
 	// do this early, before the third-party code logs anything.
 	redirectStdLogToKlog()
