@@ -54,6 +54,19 @@ kubectl-ai --llm-provider ollama --model gemma3:12b-it-qat --enable-tool-use-shi
 >> models
 ```
 
+#### Using Azure OpenAI
+
+You can also use Azure OpenAI deployment by setting your OpenAI API key and specifying the provider:
+
+```bash
+export AZURE_OPENAI_API_KEY=your_azure_openai_api_key_here
+export AZURE_OPENAI_ENDPOINT=https://your_azure_openai_endpoint_here
+kubectl-ai --llm-provider=openai --model=your_azure_openai_deployment_name_here
+# or
+az login
+kubectl-ai --llm-provider=openai://your_azure_openai_endpoint_here --model=your_azure_openai_deployment_name_here
+```
+
 #### Using OpenAI
 
 You can also use OpenAI models by setting your OpenAI API key and specifying the provider:
@@ -63,7 +76,7 @@ export OPENAI_API_KEY=your_openai_api_key_here
 kubectl-ai --llm-provider=openai --model=gpt-4.1
 ```
 
-* Note: `kubectl-ai` supports AI models from `gemini`, `vertexai`,  `azure-openai`, `openai` and local LLM providers such as `ollama` and `llamacpp`.
+* Note: `kubectl-ai` supports AI models from `gemini`, `vertexai`,  `azopenai`, `openai` and local LLM providers such as `ollama` and `llamacpp`.
 
 Run interactively:
 
@@ -120,6 +133,9 @@ kubectl-ai -quiet "create a deployment named nginx with 3 replicas using the ngi
 
 # Troubleshoot issues
 kubectl-ai -quiet "double the capacity for the nginx app"
+
+# Using Azure OpenAI instead of Gemini
+kubectl-ai --llm-provider=azopenai --model=your_azure_openai_deployment_name_here -quiet "scale the nginx deployment to 5 replicas"
 
 # Using OpenAI instead of Gemini
 kubectl-ai --llm-provider=openai --model=gpt-4.1 -quiet "scale the nginx deployment to 5 replicas"
