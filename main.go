@@ -77,7 +77,7 @@ type Options struct {
 	RemoveWorkDir          bool   `json:"removeWorkDir,omitempty"`
 }
 
-func (o *Options) OptionsInitial() {
+func (o *Options) InitDefaults() {
 	o.ProviderID = "gemini"
 	o.ModelID = "gemini-2.5-pro-preview-03-25"
 	// by default, confirm before executing kubectl commands that modify resources in the cluster.
@@ -160,7 +160,7 @@ func main() {
 	}()
 
 	var opt Options
-	opt.OptionsInitial()
+	opt.InitDefaults()
 
 	if err := bindCLIFlagsToViper(opt); err != nil {
 		fmt.Fprintln(os.Stderr, err)
