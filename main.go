@@ -158,7 +158,7 @@ func main() {
 	klog.InitFlags(nil)
 
 	flag.Set("logtostderr", "false")
-	flag.Set("log_file", "/tmp/kubectl-ai.log")
+	flag.Set("log_file", filepath.Join(os.TempDir(), "kubectl-ai.log"))
 
 	// cobra has to know that we pass pass flags with flag lib, otherwise it creates conflict with flags.parse() method
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
