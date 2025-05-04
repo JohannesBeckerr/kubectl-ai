@@ -190,7 +190,7 @@ func main() {
 func bindCLIFlagsToViper(opt Options) error {
 	f := rootCmd.Flags()
 	f.IntVar(&opt.MaxIterations, "max-iterations", opt.MaxIterations, "maximum number of iterations agent will try before giving up")
-	f.StringVar(&opt.KubeConfigPath, "kubeconfig-path", opt.KubeConfigPath, "path to kubeconfig file")
+	f.StringVar(&opt.KubeConfigPath, "kubeconfig", opt.KubeConfigPath, "path to kubeconfig file")
 	f.StringVar(&opt.PromptTemplateFilePath, "prompt-template-file-path", opt.PromptTemplateFilePath, "path to custom prompt template file")
 	f.StringVar(&opt.TracePath, "trace-path", opt.TracePath, "path to the trace file")
 	f.BoolVar(&opt.RemoveWorkDir, "remove-workdir", opt.RemoveWorkDir, "remove the temporary working directory after execution")
@@ -519,7 +519,7 @@ func populateOptionsFromViper(opt *Options) {
 	opt.EnableToolUseShim = viper.GetBool("enable-tool-use-shim")
 	opt.Quiet = viper.GetBool("quiet")
 	opt.MaxIterations = viper.GetInt("max-iterations")
-	opt.KubeConfigPath = viper.GetString("kubeconfig-path")
+	opt.KubeConfigPath = viper.GetString("kubeconfig")
 	opt.PromptTemplateFilePath = viper.GetString("prompt-template-file-path")
 	opt.TracePath = viper.GetString("trace-path")
 	opt.RemoveWorkDir = viper.GetBool("remove-workdir")
