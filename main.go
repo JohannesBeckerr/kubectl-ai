@@ -266,7 +266,6 @@ func runCmd(cmd *cobra.Command, args []string) error {
 	defer llmClient.Close()
 
 	var recorder journal.Recorder
-	// CHECK: By default it is set trace.log. It will never be empty string.
 	if opt.TracePath != "" {
 		fileRecorder, err := journal.NewFileRecorder(opt.TracePath)
 		if err != nil {
