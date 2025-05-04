@@ -61,7 +61,7 @@ You can also use Azure OpenAI deployment by setting your OpenAI API key and spec
 ```bash
 export AZURE_OPENAI_API_KEY=your_azure_openai_api_key_here
 export AZURE_OPENAI_ENDPOINT=https://your_azure_openai_endpoint_here
-kubectl-ai --llm-provider=openai --model=your_azure_openai_deployment_name_here
+kubectl-ai --llm-provider=azopenai --model=your_azure_openai_deployment_name_here
 # or
 az login
 kubectl-ai --llm-provider=openai://your_azure_openai_endpoint_here --model=your_azure_openai_deployment_name_here
@@ -76,7 +76,7 @@ export OPENAI_API_KEY=your_openai_api_key_here
 kubectl-ai --llm-provider=openai --model=gpt-4.1
 ```
 
-* Note: `kubectl-ai` supports AI models from `gemini`, `vertexai`,  `azopenai`, `openai` and local LLM providers such as `ollama` and `llamacpp`.
+* Note: `kubectl-ai` supports AI models from `gemini`, `vertexai`, `azopenai`, `openai` and local LLM providers such as `ollama` and `llamacpp`.
 
 Run interactively:
 
