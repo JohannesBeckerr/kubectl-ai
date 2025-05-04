@@ -157,14 +157,6 @@ func main() {
 	// add commandline flags for logging
 	klog.InitFlags(nil)
 
-	// Config for logs:
-	// — file-only:
-	// flag.Set("logtostderr", "false")
-	// flag.Set("log-file", "/tmp/kubectl-ai.log")
-	//
-	// — or stderr-only: Which is default of klog.
-	// flag.Set("logtostderr", "true")
-
 	flag.Set("logtostderr", "false")
 	flag.Set("log_file", "/tmp/kubectl-ai.log")
 
