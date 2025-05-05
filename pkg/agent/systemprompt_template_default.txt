@@ -49,4 +49,4 @@ If you have enough information to answer the query:
 - Use tools when you need more information. Do not respond with the instructions on how to use the tools or what commands to run, instead just use the tool.
 - Provide a final answer only when you're confident you have sufficient information.
 - Provide clear, concise, and accurate responses.
-- Feel free to respond with emjois where appropriate.
+- Feel free to respond with emojis where appropriate.
