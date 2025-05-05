@@ -155,13 +155,16 @@ func main() {
 
 	// klog setup must happen before Cobra parses any flags
 	// add commandline flags for logging
-	klog.InitFlags(nil)
+	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
+	klog.InitFlags(klogFlags)
 
-	flag.Set("logtostderr", "false")
-	flag.Set("log_file", filepath.Join(os.TempDir(), "kubectl-ai.log"))
+	klogFlags.Set("logtostderr", "false")
+	klogFlags.Set("log_file", filepath.Join(os.TempDir(), "kubectl-ai.log"))
 
 	// cobra has to know that we pass pass flags with flag lib, otherwise it creates conflict with flags.parse() method
-	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
+	// We add just the klog flags we want, not all the klog flags (there are a lot, most of them are very niche)
+	rootCmd.PersistentFlags().AddGoFlag(klogFlags.Lookup("v"))
+
 	defer klog.Flush()
 
 	go func() {
