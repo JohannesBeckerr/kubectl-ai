@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -34,6 +35,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
 	"k8s.io/klog/v2"
@@ -49,12 +51,22 @@ var (
 
 const viperEnvPrefix = "KUBECTL_AI"
 
-var rootCmd = &cobra.Command{
-	Use:   "kubectl-ai",
-	Short: "A CLI tool to interact with Kubernetes using natural language",
-	Long:  "kubectl-ai is a command-line tool that allows you to interact with your Kubernetes cluster using natural language queries. It leverages large language models to understand your intent and translate it into kubectl",
-	Args:  cobra.MaximumNArgs(1), // Only one positional arg is allowed.
-	RunE:  runCmd,
+func BuildRootCommand(opt *Options) (*cobra.Command, error) {
+	rootCmd := &cobra.Command{
+		Use:   "kubectl-ai",
+		Short: "A CLI tool to interact with Kubernetes using natural language",
+		Long:  "kubectl-ai is a command-line tool that allows you to interact with your Kubernetes cluster using natural language queries. It leverages large language models to understand your intent and translate it into kubectl",
+		Args:  cobra.MaximumNArgs(1), // Only one positional arg is allowed.
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return RunRootCommand(cmd.Context(), *opt, args)
+		},
+	}
+
+	if err := opt.bindCLIFlagsToViper(rootCmd.Flags()); err != nil {
+		return nil, err
+	}
+
+	return rootCmd, nil
 }
 
 type Options struct {
@@ -153,6 +165,20 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
+	go func() {
+		sig := <-sigCh
+		klog.Flush()
+		fmt.Fprintf(os.Stderr, "Received signal, shutting down... %s\n", sig)
+		os.Exit(0)
+	}()
+
+	if err := run(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) error {
 	// klog setup must happen before Cobra parses any flags
 	// add commandline flags for logging
 	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
@@ -161,37 +187,39 @@ func main() {
 	klogFlags.Set("logtostderr", "false")
 	klogFlags.Set("log_file", filepath.Join(os.TempDir(), "kubectl-ai.log"))
 
+	defer klog.Flush()
+
+	setupViperEnv()
+
+	var opt Options
+
+	opt.InitDefaults()
+
+	// load YAML config values
+	if err := opt.LoadConfigurationFile(); err != nil {
+		return fmt.Errorf("failed to load config file: %w", err)
+	}
+
+	rootCmd, err := BuildRootCommand(&opt)
+	if err != nil {
+		return err
+	}
+
 	// cobra has to know that we pass pass flags with flag lib, otherwise it creates conflict with flags.parse() method
 	// We add just the klog flags we want, not all the klog flags (there are a lot, most of them are very niche)
 	rootCmd.PersistentFlags().AddGoFlag(klogFlags.Lookup("v"))
 
-	defer klog.Flush()
-
-	go func() {
-		sig := <-sigCh
-		fmt.Fprintf(os.Stderr, "Received signal, shutting down... %s\n", sig)
-		klog.Flush()
-		os.Exit(0)
-	}()
-
-	var opt Options
-	opt.InitDefaults()
-
-	if err := bindCLIFlagsToViper(opt); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
-	setupViperEnv()
+	// do this early, before the third-party code logs anything.
+	redirectStdLogToKlog()
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
+
+	return nil
 }
 
-func bindCLIFlagsToViper(opt Options) error {
-	f := rootCmd.Flags()
+func (opt *Options) bindCLIFlagsToViper(f *pflag.FlagSet) error {
 	f.IntVar(&opt.MaxIterations, "max-iterations", opt.MaxIterations, "maximum number of iterations agent will try before giving up")
 	f.StringVar(&opt.KubeConfigPath, "kubeconfig", opt.KubeConfigPath, "path to kubeconfig file")
 	f.StringVar(&opt.PromptTemplateFilePath, "prompt-template-file-path", opt.PromptTemplateFilePath, "path to custom prompt template file")
@@ -206,12 +234,28 @@ func bindCLIFlagsToViper(opt Options) error {
 	f.BoolVar(&opt.Quiet, "quiet", opt.Quiet, "run in non-interactive mode, requires a query to be provided as a positional argument")
 
 	// viper binds and env var prefixes
-	err := viper.BindPFlags(f)
-	if err != nil {
-		return fmt.Errorf("failed to bind viper flags")
+	if err := loadViperFlags(f); err != nil {
+		return fmt.Errorf("failed to bind viper flags: %w", err)
 	}
 
 	return nil
+}
+
+// loadViperFlags sets flag values from viper configuration.
+func loadViperFlags(f *pflag.FlagSet) error {
+	// Note that viper.AllSettings does not work with automatic env vars
+	var errs []error
+	f.VisitAll(func(f *pflag.Flag) {
+		key := f.Name
+		if viper.IsSet(key) {
+			v := viper.Get(key)
+			s := fmt.Sprintf("%v", v)
+			if err := f.Value.Set(s); err != nil {
+				errs = append(errs, fmt.Errorf("configuration option %q=%q is not valid: %w", key, s, err))
+			}
+		}
+	})
+	return errors.Join(errs...)
 }
 
 func setupViperEnv() {
@@ -220,23 +264,7 @@ func setupViperEnv() {
 	viper.AutomaticEnv()
 }
 
-func runCmd(cmd *cobra.Command, args []string) error {
-	// Retrieving the context from cobra
-	ctx := cmd.Context()
-
-	var opt Options
-
-	// load YAML config values
-	if err := opt.LoadConfigurationFile(); err != nil {
-		return fmt.Errorf("failed to load config file: %w", err)
-	}
-
-	// populate Options either from CLI flags or ENV vars
-	populateOptionsFromViper(&opt)
-
-	// do this early, before the third-party code logs anything.
-	redirectStdLogToKlog()
-
+func RunRootCommand(ctx context.Context, opt Options, args []string) error {
 	// resolve kubeconfig path with priority: flag/env > KUBECONFIG > default path
 	if err := resolveKubeConfigPath(&opt); err != nil {
 		return fmt.Errorf("failed to resolve kubeconfig path: %w", err)
@@ -511,21 +539,6 @@ func resolveQueryInput(hasStdInData bool, args []string) (string, error) {
 		// Case: No input at all — return empty string, no error
 		return "", nil
 	}
-}
-
-func populateOptionsFromViper(opt *Options) {
-	opt.ProviderID = viper.GetString("llm-provider")
-	opt.ModelID = viper.GetString("model")
-	opt.SkipPermissions = viper.GetBool("skip-permissions")
-	opt.MCPServer = viper.GetBool("mcp-server")
-	opt.EnableToolUseShim = viper.GetBool("enable-tool-use-shim")
-	opt.Quiet = viper.GetBool("quiet")
-	opt.MaxIterations = viper.GetInt("max-iterations")
-	opt.KubeConfigPath = viper.GetString("kubeconfig")
-	opt.PromptTemplateFilePath = viper.GetString("prompt-template-file-path")
-	opt.TracePath = viper.GetString("trace-path")
-	opt.RemoveWorkDir = viper.GetBool("remove-workdir")
-
 }
 
 func resolveKubeConfigPath(opt *Options) error {
