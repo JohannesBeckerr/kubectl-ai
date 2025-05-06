@@ -34,6 +34,7 @@ import (
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/journal"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/tools"
 	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui"
+	"github.com/GoogleCloudPlatform/kubectl-ai/pkg/ui/html"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -88,6 +89,35 @@ type Options struct {
 	PromptTemplateFilePath string `json:"promptTemplateFilePath,omitempty"`
 	TracePath              string `json:"tracePath,omitempty"`
 	RemoveWorkDir          bool   `json:"removeWorkDir,omitempty"`
+
+	// UserInterface is the type of user interface to use.
+	UserInterface UserInterface `json:"userInterface,omitempty"`
+}
+
+type UserInterface string
+
+const (
+	UserInterfaceTerminal UserInterface = "terminal"
+	UserInterfaceHTML     UserInterface = "html"
+)
+
+// Implement pflag.Value for UserInterface
+func (u *UserInterface) Set(s string) error {
+	switch s {
+	case "terminal", "html":
+		*u = UserInterface(s)
+		return nil
+	default:
+		return fmt.Errorf("invalid user interface: %s", s)
+	}
+}
+
+func (u *UserInterface) String() string {
+	return string(*u)
+}
+
+func (u *UserInterface) Type() string {
+	return "UserInterface"
 }
 
 func (o *Options) InitDefaults() {
@@ -106,6 +136,9 @@ func (o *Options) InitDefaults() {
 	o.PromptTemplateFilePath = ""
 	o.TracePath = filepath.Join(os.TempDir(), "kubectl-ai-trace.txt")
 	o.RemoveWorkDir = false
+
+	// Default to terminal UI
+	o.UserInterface = UserInterfaceTerminal
 }
 
 func (o *Options) LoadConfiguration(b []byte) error {
@@ -180,6 +213,7 @@ func main() {
 
 func run(ctx context.Context) error {
 	// klog setup must happen before Cobra parses any flags
+
 	// add commandline flags for logging
 	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
 	klog.InitFlags(klogFlags)
@@ -232,6 +266,8 @@ func (opt *Options) bindCLIFlagsToViper(f *pflag.FlagSet) error {
 	f.BoolVar(&opt.MCPServer, "mcp-server", opt.MCPServer, "run in MCP server mode")
 	f.BoolVar(&opt.EnableToolUseShim, "enable-tool-use-shim", opt.EnableToolUseShim, "enable tool use shim")
 	f.BoolVar(&opt.Quiet, "quiet", opt.Quiet, "run in non-interactive mode, requires a query to be provided as a positional argument")
+
+	f.Var(&opt.UserInterface, "user-interface", "user interface mode to use")
 
 	// viper binds and env var prefixes
 	if err := loadViperFlags(f); err != nil {
@@ -312,15 +348,32 @@ func RunRootCommand(ctx context.Context, opt Options, args []string) error {
 
 	doc := ui.NewDocument()
 
-	// since stdin is already consumed, we use TTY for taking input from user
-	useTTYForInput := hasStdInData
-	if err != nil {
-		return fmt.Errorf("failed to check if stdin has data: %w", err)
-	}
+	var userInterface ui.UI
+	switch opt.UserInterface {
+	case UserInterfaceTerminal:
+		// since stdin is already consumed, we use TTY for taking input from user
+		useTTYForInput := hasStdInData
 
-	u, err := ui.NewTerminalUI(doc, recorder, useTTYForInput)
-	if err != nil {
-		return err
+		u, err := ui.NewTerminalUI(doc, recorder, useTTYForInput)
+		if err != nil {
+			return err
+		}
+		userInterface = u
+
+	case UserInterfaceHTML:
+		u, err := html.NewHTMLUserInterface(doc, recorder)
+		if err != nil {
+			return err
+		}
+		go func() {
+			if err := u.RunServer(ctx); err != nil {
+				klog.Fatalf("error running http server: %v", err)
+			}
+		}()
+		userInterface = u
+
+	default:
+		return fmt.Errorf("user-interface mode %q is not known", opt.UserInterface)
 	}
 
 	conversation := &agent.Conversation{
@@ -345,7 +398,7 @@ func RunRootCommand(ctx context.Context, opt Options, args []string) error {
 	chatSession := session{
 		model:        opt.ModelID,
 		doc:          doc,
-		ui:           u,
+		ui:           userInterface,
 		conversation: conversation,
 		LLM:          llmClient,
 	}
